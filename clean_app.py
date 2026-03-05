@@ -655,6 +655,8 @@ overlay_bg = draw_overlay(
     trajectories=(st.session_state.result["trajectories"] if st.session_state.result else None),
 )
 
+st.image(overlay_bg, caption="debug heatmap")
+
 stage = current_auto_stage(num_uav, num_task)
 u_cnt = len(st.session_state.uavs)
 t_cnt = len(st.session_state.tasks)
