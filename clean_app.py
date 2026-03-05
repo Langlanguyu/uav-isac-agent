@@ -1,6 +1,6 @@
-# cd /Users/fanbllang/Documents/BUPTstudy/2026寒/uav_isac_demo
-# source .venv/bin/activate
-# python3 -m streamlit run clean_app.py
+#cd /Users/fanbllang/Documents/BUPTstudy/2026寒/uav_isac_demo
+#source .venv/bin/activate
+#python3 -m streamlit run clean_app.py
 
 import os
 os.environ["STREAMLIT_SERVER_FILE_WATCHER_TYPE"] = "none"
@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 from PIL import Image, ImageDraw
 
-from typing import List, Dict, Optional
+from typing import List, Tuple, Dict, Optional
 import heapq
 
 from streamlit_drawable_canvas import st_canvas
@@ -473,8 +473,6 @@ def ensure_state():
     st.session_state.setdefault("result", None)
     st.session_state.setdefault("history", [])
     st.session_state.setdefault("open_explain", False)
-    st.session_state.setdefault("run_id", 0)
-    st.session_state.setdefault("canvas_key_prev", "")
 
 
 def reset_all():
@@ -485,7 +483,6 @@ def reset_all():
     st.session_state.result = None
     st.session_state.history = []
     st.session_state.open_explain = False
-    st.session_state.run_id += 1
 
 
 def current_auto_stage(num_uav: int, num_task: int) -> str:
@@ -505,6 +502,7 @@ def stage_badge(stage: str) -> str:
 
 
 def build_task_id_map(tasks: List[GridPos]) -> Dict[GridPos, str]:
+    # 全局任务ID：按输入顺序编号
     return {p: f"T{i}" for i, p in enumerate(tasks)}
 
 
@@ -607,7 +605,6 @@ if undo:
             if p in st.session_state.tasks:
                 st.session_state.tasks.remove(p)
         st.session_state.result = None
-        st.session_state.run_id += 1
         st.rerun()
     else:
         st.rerun()
@@ -616,14 +613,12 @@ if clear_u:
     st.session_state.uavs = []
     st.session_state.history = [(t, p) for (t, p) in st.session_state.history if t != "UAV"]
     st.session_state.result = None
-    st.session_state.run_id += 1
     st.rerun()
 
 if clear_t:
     st.session_state.tasks = []
     st.session_state.history = [(t, p) for (t, p) in st.session_state.history if t != "TASK"]
     st.session_state.result = None
-    st.session_state.run_id += 1
     st.rerun()
 
 if clear_all:
@@ -711,21 +706,6 @@ with top_right:
 
 left, right = st.columns([1.25, 0.75], gap="large")
 
-# ✅ 核心：给 canvas 一个“随背景变化而变化”的 key（非常快，不会卡）
-canvas_key = (
-    f"click_canvas_input_"
-    f"g{grid_size}_m{mode}_"
-    f"bs{bs_r}-{bs_c}_d{decay}_"
-    f"sh{sh_r}-{sh_c}-{sh_rad}-{sh_strength}_"
-    f"rid{st.session_state.run_id}"
-)
-
-# 如果 key 变了，说明背景要重建：把 prev_obj_len 归零，避免点击对象计数错乱
-if st.session_state.canvas_key_prev != canvas_key:
-    st.session_state.prev_obj_len = 0
-    st.session_state.canvas_key_prev = canvas_key
-
-
 with left:
     st.markdown(
         """
@@ -745,14 +725,14 @@ with left:
         fill_color="rgba(0,0,0,0)",
         stroke_width=1,
         stroke_color="rgba(0,0,0,0)",
-        background_image=overlay_bg.convert("RGB"),
+        background_image=overlay_bg,
         update_streamlit=True,
         height=CANVAS_PX,
         width=CANVAS_PX,
         drawing_mode="point",
         point_display_radius=1,
         display_toolbar=False,
-        key=canvas_key,  # ✅ 用新 key
+        key="click_canvas_input",
     )
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -858,9 +838,6 @@ with right:
                 "metrics": metrics,
                 "explain": explain,
             }
-
-            # ✅ 让 run 后也刷新一次 canvas（把轨迹覆盖图稳定画出来）
-            st.session_state.run_id += 1
             st.rerun()
 
         if st.session_state.result is not None:
