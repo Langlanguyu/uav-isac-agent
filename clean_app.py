@@ -4,6 +4,7 @@
 
 import os
 os.environ["STREAMLIT_SERVER_FILE_WATCHER_TYPE"] = "none"
+import io
 
 import streamlit as st
 import numpy as np
@@ -654,8 +655,9 @@ overlay_bg = draw_overlay(
     tasks=st.session_state.tasks,
     trajectories=(st.session_state.result["trajectories"] if st.session_state.result else None),
 )
-
-st.image(overlay_bg, caption="debug heatmap")
+buf = io.BytesIO()
+overlay_bg.save(buf, format="PNG")
+overlay_bg_png = buf.getvalue()
 
 stage = current_auto_stage(num_uav, num_task)
 u_cnt = len(st.session_state.uavs)
@@ -723,6 +725,7 @@ with left:
     st.write("")
 
     st.markdown('<div class="canvas-wrap">', unsafe_allow_html=True)
+    bg_img = Image.open(io.BytesIO(overlay_bg_png)).convert("RGB")
     canvas = st_canvas(
         fill_color="rgba(0,0,0,0)",
         stroke_width=1,
