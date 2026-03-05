@@ -10,8 +10,7 @@ from PIL import Image, ImageDraw
 from typing import List, Tuple, Dict, Optional
 import heapq
 
-import plotly.graph_objects as go
-from streamlit_plotly_events import plotly_events
+from streamlit_drawable_canvas import st_canvas
 
 GridPos = tuple[int, int]
 
@@ -718,92 +717,49 @@ with left:
     )
     st.write("")
 
-    # Streamlit Cloud 近期的 Streamlit 版本中移除了内部的 image_to_url，
-    # 这会导致 streamlit-drawable-canvas 在 background_image 参数下直接报错。
-    # 这里改用 Plotly Heatmap + plotly-events 来实现同样的“点击取坐标”交互，
-    # 更稳定、也更接近你要的“热力图有颜色 + 可点击”。
-
-    fig = go.Figure()
-    fig.add_trace(
-        go.Heatmap(
-            z=comm_map,
-            hovertemplate="r=%{y}, c=%{x}<br>q=%{z:.3f}<extra></extra>",
-            showscale=False,
-        )
-    )
-
-    # UAV / Task 点位
-    if st.session_state.uavs:
-        ys = [p[0] for p in st.session_state.uavs]
-        xs = [p[1] for p in st.session_state.uavs]
-        fig.add_trace(go.Scatter(x=xs, y=ys, mode="markers", name="UAV", marker=dict(size=10, symbol="circle")))
-
-    if st.session_state.tasks:
-        ys = [p[0] for p in st.session_state.tasks]
-        xs = [p[1] for p in st.session_state.tasks]
-        fig.add_trace(go.Scatter(x=xs, y=ys, mode="markers", name="Task", marker=dict(size=9, symbol="x")))
-
-    # 轨迹
-    if st.session_state.result and st.session_state.result.get("trajectories"):
-        for tr in st.session_state.result["trajectories"]:
-            if not tr:
-                continue
-            fig.add_trace(
-                go.Scatter(
-                    x=[p[1] for p in tr],
-                    y=[p[0] for p in tr],
-                    mode="lines",
-                    name="traj",
-                    line=dict(width=2),
-                    opacity=0.85,
-                    showlegend=False,
-                )
-            )
-
-    fig.update_layout(
-        height=CANVAS_PX,
-        margin=dict(l=8, r=8, t=8, b=8),
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        xaxis=dict(range=[-0.5, grid_size - 0.5], constrain="domain", fixedrange=True, showgrid=False, zeroline=False),
-        yaxis=dict(range=[grid_size - 0.5, -0.5], scaleanchor="x", fixedrange=True, showgrid=False, zeroline=False),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
-    )
-
     st.markdown('<div class="canvas-wrap">', unsafe_allow_html=True)
-    clicked = plotly_events(
-        fig,
-        click_event=True,
-        hover_event=False,
-        select_event=False,
-        override_height=CANVAS_PX,
-        override_width=CANVAS_PX,
-        key="plot_click",
+    canvas = st_canvas(
+        fill_color="rgba(0,0,0,0)",
+        stroke_width=1,
+        stroke_color="rgba(0,0,0,0)",
+        background_image=overlay_bg,
+        update_streamlit=True,
+        height=CANVAS_PX,
+        width=CANVAS_PX,
+        drawing_mode="point",
+        point_display_radius=1,
+        display_toolbar=False,
+        key="click_canvas_input",
     )
     st.markdown("</div>", unsafe_allow_html=True)
 
-    if clicked:
-        # plotly-events 返回的是图上的 x/y（就是网格 col/row）
-        x = int(round(float(clicked[0].get("x", 0))))
-        y = int(round(float(clicked[0].get("y", 0))))
-        y = max(0, min(grid_size - 1, y))
-        x = max(0, min(grid_size - 1, x))
-        p = (y, x)
+    if canvas.json_data is not None:
+        objs = canvas.json_data.get("objects", [])
+        if len(objs) > st.session_state.prev_obj_len:
+            new_objs = objs[st.session_state.prev_obj_len:]
+            for obj in new_objs:
+                x_px = float(obj.get("left", 0.0))
+                y_px = float(obj.get("top", 0.0))
+                p = pixel_to_grid(x_px, y_px, grid_size, CANVAS_PX)
+                if p is None:
+                    continue
 
-        st.session_state.last_click = p
-        st.session_state.result = None
+                st.session_state.last_click = p
+                st.session_state.result = None
 
-        stage_now = current_auto_stage(num_uav, num_task)
-        if stage_now == "UAV":
-            if len(st.session_state.uavs) < num_uav and p not in st.session_state.uavs:
-                st.session_state.uavs.append(p)
-                st.session_state.history.append(("UAV", p))
-                st.rerun()
-        elif stage_now == "TASK":
-            if len(st.session_state.tasks) < num_task and p not in st.session_state.tasks:
-                st.session_state.tasks.append(p)
-                st.session_state.history.append(("TASK", p))
-                st.rerun()
+                stage_now = current_auto_stage(num_uav, num_task)
+                if stage_now == "UAV":
+                    if len(st.session_state.uavs) < num_uav and p not in st.session_state.uavs:
+                        st.session_state.uavs.append(p)
+                        st.session_state.history.append(("UAV", p))
+                elif stage_now == "TASK":
+                    if len(st.session_state.tasks) < num_task and p not in st.session_state.tasks:
+                        st.session_state.tasks.append(p)
+                        st.session_state.history.append(("TASK", p))
+                else:
+                    pass
+
+            st.session_state.prev_obj_len = len(objs)
 
 with right:
     st.markdown(
