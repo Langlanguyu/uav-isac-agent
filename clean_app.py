@@ -69,7 +69,7 @@ from PIL import Image, ImageDraw
 from typing import List, Tuple, Dict, Optional
 import heapq
 
-from streamlit_drawable_canvas import st_canvas
+from streamlit_drawable_canvas_fix import st_canvas
 
 GridPos = tuple[int, int]
 
@@ -710,6 +710,7 @@ overlay_bg = draw_overlay(
     tasks=st.session_state.tasks,
     trajectories=(st.session_state.result["trajectories"] if st.session_state.result else None),
 )
+overlay_bg = overlay_bg.convert("RGBA")
 
 stage = current_auto_stage(num_uav, num_task)
 u_cnt = len(st.session_state.uavs)
