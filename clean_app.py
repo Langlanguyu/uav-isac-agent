@@ -14,7 +14,14 @@ from typing import List, Tuple, Dict, Optional
 import heapq
 
 from streamlit_drawable_canvas import st_canvas
-
+# DEBUG: 记录 canvas 模块来源（Cloud 上用来判断是否加载到 fix 版）
+try:
+    import streamlit_drawable_canvas as _sdc
+    _CANVAS_SRC = getattr(_sdc, "__file__", "unknown")
+    _CANVAS_VER = getattr(_sdc, "__version__", "unknown")
+except Exception as _e:
+    _CANVAS_SRC = f"import error: {_e}"
+    _CANVAS_VER = "unknown"
 GridPos = tuple[int, int]
 
 
@@ -588,6 +595,9 @@ with st.sidebar:
         weak_th = st.slider("weak", 0.0, 1.0, 0.55, 0.01)
 
     st.markdown("---")
+    st.markdown("### 🔎 Debug")
+    st.caption(f"canvas module: {_CANVAS_SRC}")
+    st.caption(f"canvas version: {_CANVAS_VER}")
     c1, c2, c3 = st.columns(3)
     undo = c1.button("↩︎", use_container_width=True)
     clear_u = c2.button("U", use_container_width=True)
