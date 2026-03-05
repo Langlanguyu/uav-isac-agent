@@ -742,7 +742,7 @@ with left:
         drawing_mode="point",
         point_display_radius=1,
         display_toolbar=False,
-        key="click_canvas_input",
+        key=f"click_canvas_input_{id(canvas)}_{u_cnt}_{t_cnt}_{bs_r}_{bs_c}",
     )
     st.markdown("</div>", unsafe_allow_html=True)
 
