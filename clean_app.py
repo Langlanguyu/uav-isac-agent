@@ -10,51 +10,6 @@ from PIL import Image, ImageDraw
 from typing import List, Tuple, Dict, Optional
 import heapq
 
-
-# --- Compatibility patch for streamlit-drawable-canvas on newer Streamlit ---
-# streamlit-drawable-canvas may call an internal Streamlit helper `streamlit.elements.image.image_to_url`,
-# which is not available in some Streamlit versions (e.g., Streamlit Cloud).
-# We provide a safe fallback that returns a data-URL so the canvas can still use background_image.
-try:
-    import streamlit.elements.image as _st_image
-    if not hasattr(_st_image, "image_to_url"):
-        import base64, io
-        from PIL import Image as _PILImage
-
-        def image_to_url(image, width=None, clamp=False, channels="RGB", output_format="PNG"):
-            # Accept PIL.Image or numpy array
-            if isinstance(image, np.ndarray):
-                img = _PILImage.fromarray(image)
-            elif isinstance(image, _PILImage.Image):
-                img = image
-            else:
-                img = _PILImage.open(image)
-
-            # Convert to requested channels if possible
-            if channels:
-                ch = str(channels).upper()
-                if ch == "RGB" and getattr(img, "mode", None) != "RGB":
-                    img = img.convert("RGB")
-                elif ch == "RGBA" and getattr(img, "mode", None) != "RGBA":
-                    img = img.convert("RGBA")
-
-            buf = io.BytesIO()
-            fmt = str(output_format or "PNG").upper()
-            if fmt not in ("PNG", "JPG", "JPEG", "WEBP"):
-                fmt = "PNG"
-            save_fmt = "JPEG" if fmt in ("JPG", "JPEG") else fmt
-            img.save(buf, format=save_fmt)
-
-            b64 = base64.b64encode(buf.getvalue()).decode("ascii")
-            mime = "image/png" if save_fmt == "PNG" else "image/jpeg" if save_fmt == "JPEG" else "image/webp"
-            return f"data:{mime};base64,{b64}"
-
-        _st_image.image_to_url = image_to_url  # monkey-patch for the component
-except Exception:
-    # If anything goes wrong, don't block the app; worst case the canvas won't show a background.
-    pass
-# --- End patch ---
-
 from streamlit_drawable_canvas import st_canvas
 
 GridPos = tuple[int, int]
