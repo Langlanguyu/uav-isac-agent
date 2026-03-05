@@ -7,10 +7,61 @@ import numpy as np
 import pandas as pd
 from PIL import Image, ImageDraw
 
-from typing import List, Tuple, Dict, Optional
-import heapq
+
+# ---- Compatibility patch for streamlit-drawable-canvas on newer Streamlit ----
+# streamlit-drawable-canvas relies on a private Streamlit helper `image_to_url`
+# which was removed/relocated in newer Streamlit versions (e.g., 1.5x on Cloud).
+# We provide a small shim so `background_image=...` keeps working.
+def _patch_streamlit_image_to_url():
+    try:
+        import base64, io
+        import streamlit.elements.image as st_image
+        from PIL import Image as _PILImage
+        import numpy as _np
+
+        if getattr(st_image, "image_to_url", None):
+            return  # already present
+
+        def image_to_url(image, width=None, clamp=False, channels="RGB", output_format="WEBP"):
+            # Accept PIL.Image, numpy array, or file-like/path.
+            if isinstance(image, _np.ndarray):
+                img = _PILImage.fromarray(image)
+            elif isinstance(image, _PILImage.Image):
+                img = image
+            else:
+                img = _PILImage.open(image)
+
+            # Reduce payload size: resize down to `width` if provided.
+            if width is not None:
+                w = int(width)
+                if img.size[0] > w:
+                    h = int(img.size[1] * (w / img.size[0]))
+                    img = img.resize((w, h), _PILImage.NEAREST)
+
+            # Ensure a safe mode for webp
+            if img.mode not in ("RGB", "RGBA"):
+                img = img.convert("RGB")
+            if img.mode == "RGBA":
+                img = img.convert("RGB")
+
+            buf = io.BytesIO()
+            img.save(buf, format="WEBP", quality=85, method=6)
+            b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+            return f"data:image/webp;base64,{b64}"
+
+        st_image.image_to_url = image_to_url
+    except Exception:
+        # If patching fails, we silently continue; Streamlit will raise the real error downstream.
+        pass
+
+_patch_streamlit_image_to_url()
 
 from streamlit_drawable_canvas import st_canvas
+# ---------------------------------------------------------------------------
+
+
+from typing import List, Tuple, Dict, Optional
+import heapq
 
 GridPos = tuple[int, int]
 
@@ -643,7 +694,6 @@ st.session_state.tasks = st.session_state.tasks[:num_task]
 
 CANVAS_PX = 560
 base = comm_map_to_image_cached(comm_map.astype(np.float64).tobytes(), grid_size, grid_size, bs, CANVAS_PX)
-st.image(base, caption="DEBUG: base heatmap", use_container_width=True)
 
 overlay_bg = draw_overlay(
     base_img=base,
