@@ -643,6 +643,7 @@ st.session_state.tasks = st.session_state.tasks[:num_task]
 
 CANVAS_PX = 560
 base = comm_map_to_image_cached(comm_map.astype(np.float64).tobytes(), grid_size, grid_size, bs, CANVAS_PX)
+st.image(base, caption="DEBUG: base heatmap", use_container_width=True)
 
 overlay_bg = draw_overlay(
     base_img=base,
