@@ -2,6 +2,9 @@
 #source .venv/bin/activate
 #python3 -m streamlit run clean_app.py
 
+import os
+os.environ["STREAMLIT_SERVER_FILE_WATCHER_TYPE"] = "none"
+
 import streamlit as st
 import numpy as np
 import pandas as pd
