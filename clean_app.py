@@ -6,7 +6,63 @@ import os
 os.environ["STREAMLIT_SERVER_FILE_WATCHER_TYPE"] = "none"
 
 import streamlit as st
+# --- compat patch for streamlit >= 1.54 (canvas expects image_to_url) ---
+import base64
+import io
+from PIL import Image
 import numpy as np
+
+try:
+    import streamlit.elements.image as st_image
+
+    if not hasattr(st_image, "image_to_url"):
+        def _image_to_url(image, width=None, clamp=False, channels="RGB", output_format="PNG"):
+            """
+            Minimal replacement for the removed streamlit.elements.image.image_to_url
+            Returns a data URL that streamlit-drawable-canvas can use as background_image_url.
+            """
+            if image is None:
+                return ""
+
+            # Convert to PIL Image
+            if isinstance(image, Image.Image):
+                im = image
+            elif isinstance(image, np.ndarray):
+                arr = image
+                if arr.dtype != np.uint8:
+                    arr = np.clip(arr, 0, 255).astype(np.uint8)
+                if arr.ndim == 2:
+                    im = Image.fromarray(arr, mode="L").convert("RGB")
+                elif arr.ndim == 3:
+                    if arr.shape[2] == 4:
+                        im = Image.fromarray(arr, mode="RGBA").convert("RGB")
+                    else:
+                        im = Image.fromarray(arr, mode="RGB")
+                else:
+                    raise ValueError("Unsupported ndarray shape for image_to_url.")
+            else:
+                # best-effort: try PIL open
+                try:
+                    im = Image.open(image)
+                except Exception:
+                    return ""
+
+            # Resize if width is provided
+            if width is not None and isinstance(width, int) and width > 0:
+                w0, h0 = im.size
+                if w0 != width:
+                    new_h = int(h0 * (width / w0))
+                    im = im.resize((width, new_h), Image.NEAREST)
+
+            buf = io.BytesIO()
+            im.save(buf, format=output_format)
+            b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+            return f"data:image/{output_format.lower()};base64,{b64}"
+
+        st_image.image_to_url = _image_to_url
+except Exception:
+    pass
+# --- end patch ---
 import pandas as pd
 from PIL import Image, ImageDraw
 
