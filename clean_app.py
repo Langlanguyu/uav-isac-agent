@@ -176,6 +176,7 @@ def _comm_to_rgb(v: float) -> tuple[int, int, int]:
     return (r, g, b)
 
 
+
 def build_canvas_initial_drawing(
     comm_map: np.ndarray,
     grid_size: int,
@@ -185,8 +186,15 @@ def build_canvas_initial_drawing(
     tasks: List[GridPos],
     trajectories: Optional[List[List[GridPos]]] = None,
 ) -> dict:
+    """
+    Use only rect/circle objects for visualization.
+    This is much more reliable on Streamlit Cloud than fabric line objects.
+    """
     cell = canvas_px / grid_size
-    objects = []
+    objects: list[dict] = []
+
+    def center(p: GridPos) -> tuple[float, float]:
+        return ((p[1] + 0.5) * cell, (p[0] + 0.5) * cell)
 
     # heatmap cells
     for r in range(grid_size):
@@ -212,58 +220,104 @@ def build_canvas_initial_drawing(
                 "hasBorders": False,
             })
 
-    # subtle grid lines
-    line_color = "rgba(255,255,255,0.08)"
+    # subtle grid lines, also via very thin rects
+    grid_col = "rgba(255,255,255,0.08)"
     for i in range(grid_size + 1):
         x = i * cell
         y = i * cell
         objects.append({
-            "type": "line",
+            "type": "rect",
             "version": "4.4.0",
-            "originX": "left",
+            "originX": "center",
             "originY": "top",
-            "x1": x, "y1": 0, "x2": x, "y2": canvas_px,
-            "left": 0, "top": 0,
-            "stroke": line_color,
-            "strokeWidth": 1,
-            "selectable": False, "evented": False,
+            "left": x,
+            "top": 0,
+            "width": 1,
+            "height": canvas_px,
+            "fill": grid_col,
+            "stroke": None,
+            "strokeWidth": 0,
+            "selectable": False,
+            "evented": False,
         })
         objects.append({
-            "type": "line",
+            "type": "rect",
             "version": "4.4.0",
             "originX": "left",
-            "originY": "top",
-            "x1": 0, "y1": y, "x2": canvas_px, "y2": y,
-            "left": 0, "top": 0,
-            "stroke": line_color,
-            "strokeWidth": 1,
-            "selectable": False, "evented": False,
+            "originY": "center",
+            "left": 0,
+            "top": y,
+            "width": canvas_px,
+            "height": 1,
+            "fill": grid_col,
+            "stroke": None,
+            "strokeWidth": 0,
+            "selectable": False,
+            "evented": False,
         })
 
-    def center(p: GridPos):
-        return ((p[1] + 0.5) * cell, (p[0] + 0.5) * cell)
-
-    # trajectories
+    # trajectories: draw connectors with rects + nodes with circles.
+    # This avoids fabric line rendering issues on Cloud while keeping routes clear.
     colors = ["#ffffff", "#ff6464", "#64ff64", "#64b4ff", "#fff06e", "#ff96ff"]
     if trajectories:
+        thickness = max(4, int(cell * 0.28))
+        node_r = max(3, int(cell * 0.18))
+
         for i, traj in enumerate(trajectories):
             if len(traj) < 2:
                 continue
             col = colors[i % len(colors)]
+
+            # connector bars
             for a, b in zip(traj[:-1], traj[1:]):
                 x1, y1 = center(a)
                 x2, y2 = center(b)
+
+                if a[0] == b[0]:  # horizontal
+                    cx = (x1 + x2) / 2
+                    cy = y1
+                    width = abs(x2 - x1) + thickness
+                    height = thickness
+                else:  # vertical
+                    cx = x1
+                    cy = (y1 + y2) / 2
+                    width = thickness
+                    height = abs(y2 - y1) + thickness
+
                 objects.append({
-                    "type": "line",
+                    "type": "rect",
                     "version": "4.4.0",
-                    "originX": "left",
-                    "originY": "top",
-                    "x1": x1, "y1": y1, "x2": x2, "y2": y2,
-                    "left": 0, "top": 0,
-                    "stroke": col,
-                    "strokeWidth": max(2, int(cell * 0.15)),
-                    "strokeLineCap": "round",
-                    "selectable": False, "evented": False,
+                    "originX": "center",
+                    "originY": "center",
+                    "left": cx,
+                    "top": cy,
+                    "width": width,
+                    "height": height,
+                    "fill": col,
+                    "stroke": None,
+                    "strokeWidth": 0,
+                    "rx": thickness / 2,
+                    "ry": thickness / 2,
+                    "selectable": False,
+                    "evented": False,
+                })
+
+            # node dots on top of connectors
+            for p in traj:
+                cx, cy = center(p)
+                objects.append({
+                    "type": "circle",
+                    "version": "4.4.0",
+                    "originX": "center",
+                    "originY": "center",
+                    "left": cx,
+                    "top": cy,
+                    "radius": node_r,
+                    "fill": col,
+                    "stroke": None,
+                    "strokeWidth": 0,
+                    "selectable": False,
+                    "evented": False,
                 })
 
     # tasks
@@ -281,7 +335,8 @@ def build_canvas_initial_drawing(
             "fill": "rgba(0,0,0,0)",
             "stroke": "#ffffff",
             "strokeWidth": 3,
-            "selectable": False, "evented": False,
+            "selectable": False,
+            "evented": False,
         })
 
     # uavs
@@ -301,7 +356,8 @@ def build_canvas_initial_drawing(
             "fill": col,
             "stroke": "#000000",
             "strokeWidth": 2,
-            "selectable": False, "evented": False,
+            "selectable": False,
+            "evented": False,
         })
 
     # base station
@@ -318,7 +374,8 @@ def build_canvas_initial_drawing(
         "fill": "#ffa500",
         "stroke": "#000000",
         "strokeWidth": 2,
-        "selectable": False, "evented": False,
+        "selectable": False,
+        "evented": False,
     })
 
     return {"version": "4.4.0", "objects": objects}
