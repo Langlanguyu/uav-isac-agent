@@ -668,7 +668,7 @@ else:
     bg = Image.fromarray(arr).convert("RGB")
 
 # ===== 可选 debug：先看传给 canvas 的图是不是有颜色 =====
-st.image(bg, caption="DEBUG bg to canvas", use_container_width=True)
+st.image(bg, caption="DEBUG bg to canvas")
 
 # ===== 强制 canvas 尺寸和背景图尺寸一致 =====
 W, H = bg.size
