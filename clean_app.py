@@ -2,7 +2,6 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 from PIL import Image, ImageDraw
-
 from typing import List, Dict, Optional
 import heapq
 
@@ -22,9 +21,7 @@ def inject_css():
         }
         header[data-testid="stHeader"] { background: transparent; }
         .block-container { padding-top: 1.0rem; padding-bottom: 2.2rem; }
-
         h1, h2, h3 { letter-spacing: -0.02em; }
-
         .card {
             background: rgba(255,255,255,0.78);
             border: 1px solid rgba(0,0,0,0.06);
@@ -34,7 +31,6 @@ def inject_css():
             backdrop-filter: blur(10px);
         }
         .card-tight { padding: 12px 12px; }
-
         .badge {
             display: inline-block;
             padding: 6px 10px;
@@ -49,26 +45,17 @@ def inject_css():
         .badge.warn { border-color: rgba(242,153,74,0.35); }
         .badge.info { border-color: rgba(47,128,237,0.28); }
         .badge.soft { border-color: rgba(0,0,0,0.08); color: rgba(20,20,20,0.75); }
-
         section[data-testid="stSidebar"] {
             background: linear-gradient(180deg, rgba(255,255,255,0.85), rgba(255,255,255,0.72));
             border-right: 1px solid rgba(0,0,0,0.06);
         }
-        section[data-testid="stSidebar"] .block-container {
-            padding-top: 1.2rem;
-        }
-
-        .stButton > button {
+        section[data-testid="stSidebar"] .block-container { padding-top: 1.2rem; }
+        .stButton > button, .stDownloadButton > button, div[data-testid="stFormSubmitButton"] > button {
             border-radius: 14px;
             border: 1px solid rgba(0,0,0,0.12);
             box-shadow: 0 8px 18px rgba(0,0,0,0.06);
             padding: 0.55rem 0.9rem;
         }
-        .stButton > button:active { transform: scale(0.99); }
-        .stDownloadButton > button { border-radius: 14px; }
-
-        div[data-testid="stProgress"] > div > div { border-radius: 999px; }
-
         .canvas-wrap {
             border-radius: 18px;
             overflow: hidden;
@@ -76,50 +63,32 @@ def inject_css():
             box-shadow: 0 10px 26px rgba(0,0,0,0.06);
             background: rgba(255,255,255,0.65);
         }
-
-        .kpi {
-            display:flex;
-            gap:10px;
-            flex-wrap:wrap;
-            align-items:center;
-        }
+        .kpi { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
         .kpi .badge { background: rgba(255,255,255,0.86); }
+        .small { font-size: 0.9rem; color: rgba(20,20,20,0.65); }
         </style>
         """,
         unsafe_allow_html=True,
     )
 
 
-def generate_comm_map(
-    H: int,
-    W: int,
-    bs: GridPos,
-    decay: float,
-    shadow_center: GridPos,
-    shadow_radius: int,
-    shadow_strength: float,
-) -> np.ndarray:
+def generate_comm_map(H: int, W: int, bs: GridPos, decay: float, shadow_center: GridPos, shadow_radius: int, shadow_strength: float) -> np.ndarray:
     rr, cc = np.indices((H, W))
     dist = np.sqrt((rr - bs[0]) ** 2 + (cc - bs[1]) ** 2)
     dist_norm = dist / (dist.max() + 1e-9)
-
     comm = np.exp(-decay * dist_norm)
     comm = (comm - comm.min()) / (comm.max() - comm.min() + 1e-9)
-
     manhattan = np.abs(rr - shadow_center[0]) + np.abs(cc - shadow_center[1])
     mask = manhattan <= shadow_radius
     comm[mask] = comm[mask] * (1.0 - shadow_strength)
-
     return np.clip(comm, 0.0, 1.0)
 
 
 def load_comm_map_from_csv(uploaded_file, H: int, W: int) -> np.ndarray:
     df = pd.read_csv(uploaded_file, header=None)
     arr = df.values.astype(float)
-
     if arr.shape != (H, W):
         raise ValueError(f"CSV 尺寸是 {arr.shape}，当前网格是 {(H, W)}")
-
     mn, mx = float(arr.min()), float(arr.max())
     if mx - mn < 1e-9:
         return np.zeros((H, W), dtype=float)
@@ -131,7 +100,6 @@ def load_comm_map_from_csv(uploaded_file, H: int, W: int) -> np.ndarray:
 def comm_map_to_image_cached(comm_bytes: bytes, H: int, W: int, bs: GridPos, out_px: int) -> Image.Image:
     comm_map = np.frombuffer(comm_bytes, dtype=np.float64).reshape((H, W))
     z = (comm_map * 255).astype(np.uint8)
-
     lut = np.zeros((256, 3), dtype=np.uint8)
     for i in range(256):
         t = i / 255.0
@@ -139,17 +107,14 @@ def comm_map_to_image_cached(comm_bytes: bytes, H: int, W: int, bs: GridPos, out
         g = int(255 * np.clip(1.8 * (t - 0.20), 0, 1))
         b = int(255 * np.clip(1.2 * (0.95 - t), 0, 1))
         lut[i] = [r, g, b]
-
     rgb = lut[z]
     img = Image.fromarray(rgb, mode="RGB").resize((out_px, out_px), resample=Image.NEAREST)
-
     draw = ImageDraw.Draw(img)
     cell = out_px / W
     cx = (bs[1] + 0.5) * cell
     cy = (bs[0] + 0.5) * cell
-    R = max(6, int(cell * 0.25))
-    draw.ellipse((cx - R, cy - R, cx + R, cy + R), fill=(255, 165, 0), outline=(0, 0, 0), width=2)
-
+    r0 = max(6, int(cell * 0.25))
+    draw.ellipse((cx - r0, cy - r0, cx + r0, cy + r0), fill=(255, 165, 0), outline=(0, 0, 0), width=2)
     return img
 
 
@@ -170,7 +135,6 @@ def assign_tasks_nearest(starts: List[GridPos], tasks: List[GridPos]) -> List[Li
     tasks_left = tasks.copy()
     plans = [[] for _ in starts]
     cur_pos = starts.copy()
-
     while tasks_left:
         for i in range(len(cur_pos)):
             if not tasks_left:
@@ -186,17 +150,10 @@ def assign_tasks_nearest(starts: List[GridPos], tasks: List[GridPos]) -> List[Li
     return plans
 
 
-def assign_tasks_comm_aware(
-    starts: List[GridPos],
-    tasks: List[GridPos],
-    comm_map: np.ndarray,
-    alpha_dist: float,
-    lambda_comm: float,
-) -> List[List[GridPos]]:
+def assign_tasks_comm_aware(starts: List[GridPos], tasks: List[GridPos], comm_map: np.ndarray, alpha_dist: float, lambda_comm: float) -> List[List[GridPos]]:
     tasks_left = tasks.copy()
     plans = [[] for _ in starts]
     cur_pos = starts.copy()
-
     while tasks_left:
         for i in range(len(cur_pos)):
             if not tasks_left:
@@ -214,12 +171,7 @@ def assign_tasks_comm_aware(
     return plans
 
 
-def astar(
-    grid_walkable: np.ndarray,
-    start: GridPos,
-    goal: GridPos,
-    cell_cost: Optional[np.ndarray] = None,
-) -> List[GridPos]:
+def astar(grid_walkable: np.ndarray, start: GridPos, goal: GridPos, cell_cost: Optional[np.ndarray] = None) -> List[GridPos]:
     H, W = grid_walkable.shape
     if cell_cost is None:
         cell_cost = np.zeros((H, W), dtype=float)
@@ -231,11 +183,7 @@ def astar(
     def neighbors(p):
         r, c = p
         cand = [(r - 1, c), (r + 1, c), (r, c - 1), (r, c + 1)]
-        out = []
-        for q in cand:
-            if in_bounds(q) and grid_walkable[q]:
-                out.append(q)
-        return out
+        return [q for q in cand if in_bounds(q) and grid_walkable[q]]
 
     def h(p):
         return abs(p[0] - goal[0]) + abs(p[1] - goal[1])
@@ -253,12 +201,9 @@ def astar(
             while p is not None:
                 path.append(p)
                 p = came_from[p]
-            path.reverse()
-            return path
-
+            return list(reversed(path))
         for nb in neighbors(cur):
-            step_cost = 1.0 + float(cell_cost[nb])
-            ng = gscore[cur] + step_cost
+            ng = gscore[cur] + 1.0 + float(cell_cost[nb])
             if nb not in gscore or ng < gscore[nb]:
                 gscore[nb] = ng
                 came_from[nb] = cur
@@ -266,16 +211,9 @@ def astar(
     return []
 
 
-def plan_paths(
-    grid_size: int,
-    starts: List[GridPos],
-    task_plans: List[List[GridPos]],
-    comm_map: np.ndarray,
-    w_comm_risk: float,
-) -> List[List[GridPos]]:
+def plan_paths(grid_size: int, starts: List[GridPos], task_plans: List[List[GridPos]], comm_map: np.ndarray, w_comm_risk: float) -> List[List[GridPos]]:
     walkable = np.ones((grid_size, grid_size), dtype=bool)
     cell_cost = w_comm_risk * (1.0 - comm_map)
-
     trajectories = []
     for i, s in enumerate(starts):
         cur = s
@@ -306,19 +244,9 @@ def evaluate_paths(comm_map: np.ndarray, trajectories: List[List[GridPos]], weak
     return {"avg_comm": avg / total, "weak_ratio": weak / total, "total_steps": float(total)}
 
 
-def explain_plain(
-    algo_name: str,
-    comm_map: np.ndarray,
-    task_plans: List[List[GridPos]],
-    w_comm_risk: float,
-    lambda_comm: float,
-    weak_th: float,
-) -> str:
+def explain_plain(algo_name: str, comm_map: np.ndarray, task_plans: List[List[GridPos]], w_comm_risk: float, lambda_comm: float, weak_th: float) -> str:
     def q(p: GridPos) -> float:
         return float(comm_map[p])
-
-    def manhattan(a: GridPos, b: GridPos) -> int:
-        return abs(a[0] - b[0]) + abs(a[1] - b[1])
 
     all_tasks = [p for plan in task_plans for p in plan]
     if all_tasks:
@@ -359,58 +287,24 @@ def explain_plain(
     lines.append(f"- 分配规则：{assign_rule}")
     lines.append(f"- 直觉解释：{style_hint}")
     if all_tasks:
-        lines.append(
-            f"- 订单点信号概况：范围 {q_min:.2f}~{q_max:.2f}，平均 {q_mean:.2f}；低于阈值 {weak_th:.2f} 的有 {weak_cnt} 个（约 {weak_ratio*100:.0f}%）"
-        )
+        lines.append(f"- 订单点信号概况：范围 {q_min:.2f}~{q_max:.2f}，平均 {q_mean:.2f}；低于阈值 {weak_th:.2f} 的有 {weak_cnt} 个（约 {weak_ratio*100:.0f}%）")
     lines.append("")
-    lines.append("【分配结果（每架 UAV 的订单顺序）】")
-    for i, plan in enumerate(task_plans):
-        if plan:
-            lines.append(f"- UAV{i+1}：{plan}")
-        else:
-            lines.append(f"- UAV{i+1}：未分到订单")
-    lines.append("")
-    if all_tasks:
-        lines.append("【我为什么这么分（可解释证据）】")
-        lines.append("下面每一行都在解释：这个订单对该 UAV 来说，距离成本+信号风险合在一起是否划算。")
-        lines.append("（说明：dist 用的是该 UAV 当前任务链上“上一个点→这个点”的曼哈顿距离；q 是该点通信质量。）")
-        lines.append("")
-        for i, plan in enumerate(task_plans):
-            if not plan:
-                continue
-            lines.append(f"UAV{i+1} 的任务链：")
-            prev = None
-            for k, p in enumerate(plan):
-                dist = manhattan(prev, p) if prev is not None else 0
-                qq = q(p)
-                if "通信感知" in algo_name:
-                    cost = dist + lambda_comm * (1.0 - qq)
-                    lines.append(f"  - 第{k+1}单 {p} | dist={dist:>2d} | q={qq:.2f} | 代价≈{cost:.2f}")
-                else:
-                    lines.append(f"  - 第{k+1}单 {p} | dist={dist:>2d} | q={qq:.2f} | 代价≈{float(dist):.2f}")
-                prev = p
-            lines.append("")
-    lines.append("【我怎么走路（路线规划）】")
-    lines.append("分完工以后，我不会只追求最短路，而是把每个格子看成“走过去会不会容易掉线”。")
-    lines.append(f"- 我把通信风险写进每一步的代价：每走一步都会额外加上 w·(1-通信质量)，w={w_comm_risk:.2f}")
-    lines.append(f"- 弱覆盖阈值是 {weak_th:.2f}：如果一条路会长时间穿过低于这个值的区域，我会倾向换路线。")
+    lines.append("【路线规划】")
+    lines.append(f"- 我把通信风险写进每一步代价：每走一步额外加上 w·(1-通信质量)，w={w_comm_risk:.2f}")
+    lines.append(f"- 弱覆盖阈值是 {weak_th:.2f}")
     lines.append(f"- 直觉解释：{path_hint}")
     lines.append("")
     lines.append("【一句话总结】")
     if "通信感知" in algo_name:
-        lines.append("我做的是“通信感知调度”：分配时不只看距离，路线也会绕开弱覆盖，让整体更稳、更像真实城市低空运行。")
+        lines.append("我做的是通信感知调度：分配时不只看距离，路线也会绕开弱覆盖，让整体更稳。")
     else:
-        lines.append("我做的是“就近调度”：分配主要看距离，路线也更偏最短路，更像效率优先。")
+        lines.append("我做的是就近调度：分配主要看距离，路线更偏最短路。")
     return "\n".join(lines)
 
 
-def draw_overlay(
-    base_img: Image.Image,
-    grid_size: int,
-    uavs: List[GridPos],
-    tasks: List[GridPos],
-    trajectories: Optional[List[List[GridPos]]] = None,
-) -> Image.Image:
+@st.cache_data(show_spinner=False)
+def draw_overlay_cached(base_bytes: bytes, grid_size: int, uavs: tuple, tasks: tuple, trajectories: tuple | None) -> Image.Image:
+    base_img = Image.open(pd.io.common.BytesIO(base_bytes)).convert("RGB")
     img = base_img.copy()
     draw = ImageDraw.Draw(img)
     Wpx, _ = img.size
@@ -434,152 +328,47 @@ def draw_overlay(
             if len(traj) < 2:
                 continue
             pts = [center(p) for p in traj]
-            col = colors[i % len(colors)]
-            draw.line(pts, fill=col, width=max(2, int(cell * 0.18)))
+            draw.line(pts, fill=colors[i % len(colors)], width=max(2, int(cell * 0.15)))
 
     for i, p in enumerate(uavs):
         cx, cy = center(p)
-        R = max(5, int(cell * 0.25))
+        r0 = max(5, int(cell * 0.25))
         col = colors[i % len(colors)]
-        draw.rectangle((cx - R, cy - R, cx + R, cy + R), fill=col, outline=(0, 0, 0), width=2)
+        draw.rectangle((cx - r0, cy - r0, cx + r0, cy + r0), fill=col, outline=(0, 0, 0), width=2)
 
-    for _, p in enumerate(tasks):
+    for p in tasks:
         cx, cy = center(p)
-        R = max(6, int(cell * 0.30))
-        draw.ellipse((cx - R, cy - R, cx + R, cy + R), outline=(255, 255, 255), width=3)
-
+        r0 = max(6, int(cell * 0.30))
+        draw.ellipse((cx - r0, cy - r0, cx + r0, cy + r0), outline=(255, 255, 255), width=3)
     return img
 
 
-def _rgb_to_hex(rgb: tuple[int, int, int]) -> str:
-    return "#%02x%02x%02x" % rgb
-
-
-def _comm_to_rgb(v: float) -> tuple[int, int, int]:
-    t = float(np.clip(v, 0.0, 1.0))
-    r = int(255 * np.clip(1.6 * (t - 0.55), 0, 1))
-    g = int(255 * np.clip(1.8 * (t - 0.20), 0, 1))
-    b = int(255 * np.clip(1.2 * (0.95 - t), 0, 1))
-    return (r, g, b)
-
-
 @st.cache_data(show_spinner=False)
-def build_canvas_initial_drawing_cached(
-    comm_bytes: bytes,
-    grid_size: int,
-    canvas_px: int,
-    bs: GridPos,
-    uavs: tuple[GridPos, ...],
-    tasks: tuple[GridPos, ...],
-) -> dict:
-    comm_map = np.frombuffer(comm_bytes, dtype=np.float64).reshape((grid_size, grid_size))
+def build_selection_drawing_cached(grid_size: int, canvas_px: int, bs: GridPos, uavs: tuple, tasks: tuple) -> dict:
     cell = canvas_px / grid_size
-    objects: list[dict] = []
-
-    # heatmap only + current points; no trajectories here, to keep canvas fast.
-    for r in range(grid_size):
-        for c in range(grid_size):
-            fill = _rgb_to_hex(_comm_to_rgb(float(comm_map[r, c])))
-            objects.append({
-                "type": "rect",
-                "version": "4.4.0",
-                "originX": "left",
-                "originY": "top",
-                "left": c * cell,
-                "top": r * cell,
-                "width": cell + 0.1,
-                "height": cell + 0.1,
-                "fill": fill,
-                "stroke": None,
-                "strokeWidth": 0,
-                "selectable": False,
-                "evented": False,
-                "hasControls": False,
-                "hasBorders": False,
-            })
-
-    # base station marker
-    bs_x = (bs[1] + 0.5) * cell
-    bs_y = (bs[0] + 0.5) * cell
-    objects.append({
-        "type": "circle",
-        "version": "4.4.0",
-        "originX": "center",
-        "originY": "center",
-        "left": bs_x,
-        "top": bs_y,
-        "radius": max(5, cell * 0.22),
-        "fill": "#ffa500",
-        "stroke": "#000000",
-        "strokeWidth": 2,
-        "selectable": False,
-        "evented": False,
-    })
-
-    # light grid lines
+    objects = []
+    grid_color = "rgba(90,90,120,0.18)"
     for i in range(grid_size + 1):
         x = i * cell
         y = i * cell
-        objects.append({
-            "type": "line",
-            "version": "4.4.0",
-            "x1": x, "y1": 0, "x2": x, "y2": canvas_px,
-            "stroke": "rgba(255,255,255,0.08)",
-            "strokeWidth": 1,
-            "selectable": False,
-            "evented": False,
-        })
-        objects.append({
-            "type": "line",
-            "version": "4.4.0",
-            "x1": 0, "y1": y, "x2": canvas_px, "y2": y,
-            "stroke": "rgba(255,255,255,0.08)",
-            "strokeWidth": 1,
-            "selectable": False,
-            "evented": False,
-        })
+        objects.append({"type": "line", "version": "4.4.0", "originX": "left", "originY": "top", "x1": x, "y1": 0, "x2": x, "y2": canvas_px, "left": 0, "top": 0, "stroke": grid_color, "strokeWidth": 1, "selectable": False, "evented": False})
+        objects.append({"type": "line", "version": "4.4.0", "originX": "left", "originY": "top", "x1": 0, "y1": y, "x2": canvas_px, "y2": y, "left": 0, "top": 0, "stroke": grid_color, "strokeWidth": 1, "selectable": False, "evented": False})
 
-    uav_colors = ["#ffffff", "#ff6464", "#64ff64", "#64b4ff", "#fff06e", "#ff96ff"]
+    def center(p: GridPos):
+        return ((p[1] + 0.5) * cell, (p[0] + 0.5) * cell)
 
-    for i, p in enumerate(uavs):
-        cx = (p[1] + 0.5) * cell
-        cy = (p[0] + 0.5) * cell
-        objects.append({
-            "type": "rect",
-            "version": "4.4.0",
-            "originX": "center",
-            "originY": "center",
-            "left": cx,
-            "top": cy,
-            "width": max(8, cell * 0.5),
-            "height": max(8, cell * 0.5),
-            "fill": uav_colors[i % len(uav_colors)],
-            "stroke": "#000000",
-            "strokeWidth": 2,
-            "rx": 2,
-            "ry": 2,
-            "selectable": False,
-            "evented": False,
-        })
-
+    colors = ["#ffffff", "#ff6464", "#64ff64", "#64b4ff", "#fff06e", "#ff96ff"]
     for p in tasks:
-        cx = (p[1] + 0.5) * cell
-        cy = (p[0] + 0.5) * cell
-        objects.append({
-            "type": "circle",
-            "version": "4.4.0",
-            "originX": "center",
-            "originY": "center",
-            "left": cx,
-            "top": cy,
-            "radius": max(6, cell * 0.28),
-            "fill": "rgba(0,0,0,0)",
-            "stroke": "#ffffff",
-            "strokeWidth": 3,
-            "selectable": False,
-            "evented": False,
-        })
-
+        cx, cy = center(p)
+        r0 = max(6, int(cell * 0.30))
+        objects.append({"type": "circle", "version": "4.4.0", "originX": "center", "originY": "center", "left": cx, "top": cy, "radius": r0, "fill": "rgba(0,0,0,0)", "stroke": "#ffffff", "strokeWidth": 3, "selectable": False, "evented": False})
+    for i, p in enumerate(uavs):
+        cx, cy = center(p)
+        r0 = max(5, int(cell * 0.25))
+        objects.append({"type": "rect", "version": "4.4.0", "originX": "center", "originY": "center", "left": cx, "top": cy, "width": 2 * r0, "height": 2 * r0, "fill": colors[i % len(colors)], "stroke": "#000000", "strokeWidth": 2, "selectable": False, "evented": False})
+    cx, cy = center(bs)
+    r0 = max(6, int(cell * 0.25))
+    objects.append({"type": "circle", "version": "4.4.0", "originX": "center", "originY": "center", "left": cx, "top": cy, "radius": r0, "fill": "#ffa500", "stroke": "#000000", "strokeWidth": 2, "selectable": False, "evented": False})
     return {"version": "4.4.0", "objects": objects}
 
 
@@ -591,6 +380,25 @@ def ensure_state():
     st.session_state.setdefault("result", None)
     st.session_state.setdefault("history", [])
     st.session_state.setdefault("open_explain", False)
+    st.session_state.setdefault("canvas_rev", 0)
+    st.session_state.setdefault("params", {
+        "grid_size": 25,
+        "num_uav": 3,
+        "num_task": 8,
+        "mode": "B",
+        "bs_r": 12,
+        "bs_c": 12,
+        "decay": 3.0,
+        "sh_r": 18,
+        "sh_c": 18,
+        "sh_rad": 5,
+        "sh_strength": 0.75,
+        "algo_name": "通信感知分配（创新）",
+        "alpha_dist": 1.0,
+        "lambda_comm": 2.5,
+        "w_comm_risk": 3.0,
+        "weak_th": 0.55,
+    })
 
 
 def reset_all():
@@ -601,6 +409,7 @@ def reset_all():
     st.session_state.result = None
     st.session_state.history = []
     st.session_state.open_explain = False
+    st.session_state.canvas_rev += 1
 
 
 def current_auto_stage(num_uav: int, num_task: int) -> str:
@@ -629,17 +438,13 @@ def build_assignment_df(task_plans: List[List[GridPos]], tasks_global: List[Grid
     for i, plan in enumerate(task_plans):
         if plan:
             seq = " → ".join([f"{tid.get(p, 'T?')}({p[0]},{p[1]})" for p in plan])
-            first = plan[0]
-            last = plan[-1]
-            rows.append(
-                {
-                    "UAV": f"U{i+1}",
-                    "Tasks": len(plan),
-                    "Sequence (Global)": seq,
-                    "First": f"{tid.get(first, 'T?')}({first[0]},{first[1]})",
-                    "Last": f"{tid.get(last, 'T?')}({last[0]},{last[1]})",
-                }
-            )
+            rows.append({
+                "UAV": f"U{i+1}",
+                "Tasks": len(plan),
+                "Sequence (Global)": seq,
+                "First": f"{tid.get(plan[0], 'T?')}({plan[0][0]},{plan[0][1]})",
+                "Last": f"{tid.get(plan[-1], 'T?')}({plan[-1][0]},{plan[-1][1]})",
+            })
         else:
             rows.append({"UAV": f"U{i+1}", "Tasks": 0, "Sequence (Global)": "-", "First": "-", "Last": "-"})
     return pd.DataFrame(rows)
@@ -648,6 +453,7 @@ def build_assignment_df(task_plans: List[List[GridPos]], tasks_global: List[Grid
 st.set_page_config(page_title="UAV ISAC Agent", layout="wide")
 inject_css()
 ensure_state()
+params = st.session_state.params
 
 st.markdown(
     """
@@ -656,7 +462,7 @@ st.markdown(
         <div style="font-size:1.55rem; font-weight:900;">🛰️ ISAC UAV Scheduling Agent</div>
         <div class="kpi">
           <span class="badge info">Demo</span>
-          <span class="badge soft">Canvas</span>
+          <span class="badge soft">Low-lag Mode</span>
         </div>
       </div>
     </div>
@@ -667,30 +473,29 @@ st.write("")
 
 with st.sidebar:
     st.markdown("### ⚙️")
-    with st.expander("Grid", expanded=True):
-        grid_size = st.slider("Size", 15, 60, 25)
-        num_uav = st.slider("UAV", 1, 10, 3)
-        num_task = st.slider("Task", 1, 30, 8)
-
-    with st.expander("Comm Map", expanded=True):
-        mode = st.radio("Source", ["B", "A"], index=0, horizontal=True)
-        bs_r = st.slider("BS row", 0, grid_size - 1, grid_size // 2)
-        bs_c = st.slider("BS col", 0, grid_size - 1, grid_size // 2)
-        decay = st.slider("Decay", 0.5, 8.0, 3.0, 0.1)
-        sh_r = st.slider("Shadow row", 0, grid_size - 1, int(grid_size * 0.75))
-        sh_c = st.slider("Shadow col", 0, grid_size - 1, int(grid_size * 0.75))
-        sh_rad = st.slider("Shadow r", 1, grid_size // 2, max(2, grid_size // 5))
-        sh_strength = st.slider("Shadow s", 0.0, 0.95, 0.75, 0.05)
-        uploaded = None
-        if mode == "A":
-            uploaded = st.file_uploader("CSV", type=["csv"])
-
-    with st.expander("Policy", expanded=False):
-        algo_name = st.selectbox("Assign", ["最近邻（基线）", "通信感知分配（创新）"])
-        alpha_dist = st.slider("α", 0.5, 5.0, 1.0, 0.1)
-        lambda_comm = st.slider("λ", 0.0, 10.0, 2.5, 0.1)
-        w_comm_risk = st.slider("w", 0.0, 10.0, 3.0, 0.1)
-        weak_th = st.slider("weak", 0.0, 1.0, 0.55, 0.01)
+    with st.form("cfg_form"):
+        with st.expander("Grid", expanded=True):
+            grid_size = st.slider("Size", 15, 60, int(params["grid_size"]))
+            num_uav = st.slider("UAV", 1, 10, int(params["num_uav"]))
+            num_task = st.slider("Task", 1, 30, int(params["num_task"]))
+        with st.expander("Comm Map", expanded=True):
+            mode = st.radio("Source", ["B", "A"], index=0 if params["mode"] == "B" else 1, horizontal=True)
+            bs_r = st.slider("BS row", 0, grid_size - 1, min(int(params["bs_r"]), grid_size - 1))
+            bs_c = st.slider("BS col", 0, grid_size - 1, min(int(params["bs_c"]), grid_size - 1))
+            decay = st.slider("Decay", 0.5, 8.0, float(params["decay"]), 0.1)
+            sh_r = st.slider("Shadow row", 0, grid_size - 1, min(int(params["sh_r"]), grid_size - 1))
+            sh_c = st.slider("Shadow col", 0, grid_size - 1, min(int(params["sh_c"]), grid_size - 1))
+            sh_rad = st.slider("Shadow r", 1, max(1, grid_size // 2), min(int(params["sh_rad"]), max(1, grid_size // 2)))
+            sh_strength = st.slider("Shadow s", 0.0, 0.95, float(params["sh_strength"]), 0.05)
+            uploaded = st.file_uploader("CSV", type=["csv"]) if mode == "A" else None
+        with st.expander("Policy", expanded=False):
+            algo_options = ["最近邻（基线）", "通信感知分配（创新）"]
+            algo_name = st.selectbox("Assign", algo_options, index=algo_options.index(params["algo_name"]) if params["algo_name"] in algo_options else 1)
+            alpha_dist = st.slider("α", 0.5, 5.0, float(params["alpha_dist"]), 0.1)
+            lambda_comm = st.slider("λ", 0.0, 10.0, float(params["lambda_comm"]), 0.1)
+            w_comm_risk = st.slider("w", 0.0, 10.0, float(params["w_comm_risk"]), 0.1)
+            weak_th = st.slider("weak", 0.0, 1.0, float(params["weak_th"]), 0.01)
+        apply_cfg = st.form_submit_button("Apply", use_container_width=True)
 
     st.markdown("---")
     c1, c2, c3 = st.columns(3)
@@ -699,15 +504,49 @@ with st.sidebar:
     clear_t = c3.button("T", use_container_width=True)
     clear_all = st.button("✕", use_container_width=True)
 
+if apply_cfg:
+    st.session_state.params = {
+        "grid_size": grid_size, "num_uav": num_uav, "num_task": num_task,
+        "mode": mode, "bs_r": bs_r, "bs_c": bs_c, "decay": decay,
+        "sh_r": sh_r, "sh_c": sh_c, "sh_rad": sh_rad, "sh_strength": sh_strength,
+        "algo_name": algo_name, "alpha_dist": alpha_dist, "lambda_comm": lambda_comm,
+        "w_comm_risk": w_comm_risk, "weak_th": weak_th,
+    }
+    st.session_state.uavs = st.session_state.uavs[:num_uav]
+    st.session_state.tasks = st.session_state.tasks[:num_task]
+    st.session_state.result = None
+    st.session_state.prev_obj_len = 0
+    st.session_state.canvas_rev += 1
+    st.rerun()
+
+params = st.session_state.params
+grid_size = int(params["grid_size"])
+num_uav = int(params["num_uav"])
+num_task = int(params["num_task"])
+mode = params["mode"]
+bs_r = int(params["bs_r"])
+bs_c = int(params["bs_c"])
+decay = float(params["decay"])
+sh_r = int(params["sh_r"])
+sh_c = int(params["sh_c"])
+sh_rad = int(params["sh_rad"])
+sh_strength = float(params["sh_strength"])
+algo_name = params["algo_name"]
+alpha_dist = float(params["alpha_dist"])
+lambda_comm = float(params["lambda_comm"])
+w_comm_risk = float(params["w_comm_risk"])
+weak_th = float(params["weak_th"])
+
 if undo:
     if st.session_state.history:
         typ, p = st.session_state.history.pop()
         if typ == "UAV" and p in st.session_state.uavs:
             st.session_state.uavs.remove(p)
-        if typ == "TASK" and p in st.session_state.tasks:
+        elif typ == "TASK" and p in st.session_state.tasks:
             st.session_state.tasks.remove(p)
         st.session_state.result = None
         st.session_state.prev_obj_len = 0
+        st.session_state.canvas_rev += 1
     st.rerun()
 
 if clear_u:
@@ -715,6 +554,7 @@ if clear_u:
     st.session_state.history = [(t, p) for (t, p) in st.session_state.history if t != "UAV"]
     st.session_state.result = None
     st.session_state.prev_obj_len = 0
+    st.session_state.canvas_rev += 1
     st.rerun()
 
 if clear_t:
@@ -722,6 +562,7 @@ if clear_t:
     st.session_state.history = [(t, p) for (t, p) in st.session_state.history if t != "TASK"]
     st.session_state.result = None
     st.session_state.prev_obj_len = 0
+    st.session_state.canvas_rev += 1
     st.rerun()
 
 if clear_all:
@@ -729,13 +570,7 @@ if clear_all:
     st.rerun()
 
 bs = (bs_r, bs_c)
-comm_map = generate_comm_map(
-    grid_size, grid_size,
-    bs=bs, decay=decay,
-    shadow_center=(sh_r, sh_c),
-    shadow_radius=sh_rad,
-    shadow_strength=sh_strength,
-)
+comm_map = generate_comm_map(grid_size, grid_size, bs=bs, decay=decay, shadow_center=(sh_r, sh_c), shadow_radius=sh_rad, shadow_strength=sh_strength)
 if mode == "A" and uploaded is not None:
     try:
         comm_map = load_comm_map_from_csv(uploaded, grid_size, grid_size)
@@ -745,24 +580,21 @@ if mode == "A" and uploaded is not None:
 st.session_state.uavs = st.session_state.uavs[:num_uav]
 st.session_state.tasks = st.session_state.tasks[:num_task]
 
-CANVAS_PX = 560
+CANVAS_PX = 520
 comm_bytes = comm_map.astype(np.float64).tobytes()
 base = comm_map_to_image_cached(comm_bytes, grid_size, grid_size, bs, CANVAS_PX)
-result_img = draw_overlay(
-    base_img=base,
-    grid_size=grid_size,
-    uavs=st.session_state.uavs,
-    tasks=st.session_state.tasks,
-    trajectories=(st.session_state.result["trajectories"] if st.session_state.result else None),
-)
-initial_drawing = build_canvas_initial_drawing_cached(
-    comm_bytes,
+base_buf = pd.io.common.BytesIO()
+base.save(base_buf, format="PNG")
+base_bytes = base_buf.getvalue()
+result_img = draw_overlay_cached(
+    base_bytes,
     grid_size,
-    CANVAS_PX,
-    bs,
     tuple(st.session_state.uavs),
     tuple(st.session_state.tasks),
+    tuple(tuple(tr) for tr in st.session_state.result["trajectories"]) if st.session_state.result else None,
 )
+selection_drawing = build_selection_drawing_cached(grid_size, CANVAS_PX, bs, tuple(st.session_state.uavs), tuple(st.session_state.tasks))
+base_len = len(selection_drawing["objects"])
 
 stage = current_auto_stage(num_uav, num_task)
 u_cnt = len(st.session_state.uavs)
@@ -791,7 +623,6 @@ with top_left:
         unsafe_allow_html=True,
     )
     st.progress(min(1.0, progress))
-
 with top_right:
     if st.session_state.result is not None:
         m = st.session_state.result["metrics"]
@@ -800,60 +631,41 @@ with top_right:
         c2.metric("weak", f"{m['weak_ratio']:.3f}")
         c3.metric("steps", f"{int(m['total_steps'])}")
     else:
-        st.markdown(
-            """
-            <div class="card card-tight">
-              <div class="kpi">
-                <span class="badge soft">q̄</span>
-                <span class="badge soft">weak</span>
-                <span class="badge soft">steps</span>
-              </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        st.markdown('<div class="card card-tight"><div class="kpi"><span class="badge soft">q̄</span><span class="badge soft">weak</span><span class="badge soft">steps</span></div></div>', unsafe_allow_html=True)
 
 left, right = st.columns([1.25, 0.75], gap="large")
-
 with left:
-    st.markdown(
-        """
-        <div class="card card-tight">
-          <div style="display:flex; align-items:center; justify-content:space-between;">
-            <div style="font-weight:900;">🗺️ Canvas</div>
-            <div class="kpi"></div>
-          </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    st.markdown('<div class="card card-tight"><div style="font-weight:900;">🗺️ Selection Grid</div></div>', unsafe_allow_html=True)
     st.write("")
-
+    st.image(base, width=CANVAS_PX)
     st.markdown('<div class="canvas-wrap">', unsafe_allow_html=True)
     canvas = st_canvas(
         fill_color="rgba(0,0,0,0)",
         stroke_width=1,
         stroke_color="rgba(0,0,0,0)",
+        background_color="rgba(255,255,255,0.03)",
         update_streamlit=True,
         height=CANVAS_PX,
         width=CANVAS_PX,
         drawing_mode="point",
         point_display_radius=1,
         display_toolbar=False,
-        initial_drawing=initial_drawing,
-        key="click_canvas_input",
+        initial_drawing=selection_drawing,
+        key=f"click_canvas_input_{st.session_state.canvas_rev}",
     )
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    st.caption("上方画布用于选点；下方结果图用于稳定显示 UAV / TASK / 路径。")
-    st.image(result_img, caption="Result Visualization", width=CANVAS_PX)
+    st.markdown('</div>', unsafe_allow_html=True)
+    st.caption('上图是热力图；下方透明选点网格只负责点击，不卡顿很多。')
+    st.write("")
+    st.markdown('<div class="card card-tight"><div style="font-weight:900;">🖼️ Result Visualization</div></div>', unsafe_allow_html=True)
+    st.write("")
+    st.image(result_img, width=CANVAS_PX)
 
     if canvas.json_data is not None:
         objs = canvas.json_data.get("objects", [])
-        base_len = len(initial_drawing["objects"])
         extra = max(0, len(objs) - base_len)
         if extra > st.session_state.prev_obj_len:
-            new_objs = objs[base_len + st.session_state.prev_obj_len: base_len + extra]
+            new_objs = objs[base_len + st.session_state.prev_obj_len : base_len + extra]
+            added = False
             for obj in new_objs:
                 x_px = float(obj.get("left", 0.0))
                 y_px = float(obj.get("top", 0.0))
@@ -863,33 +675,23 @@ with left:
                 st.session_state.last_click = p
                 st.session_state.result = None
                 stage_now = current_auto_stage(num_uav, num_task)
-                if stage_now == "UAV":
-                    if len(st.session_state.uavs) < num_uav and p not in st.session_state.uavs:
-                        st.session_state.uavs.append(p)
-                        st.session_state.history.append(("UAV", p))
-                elif stage_now == "TASK":
-                    if len(st.session_state.tasks) < num_task and p not in st.session_state.tasks:
-                        st.session_state.tasks.append(p)
-                        st.session_state.history.append(("TASK", p))
+                if stage_now == "UAV" and len(st.session_state.uavs) < num_uav and p not in st.session_state.uavs:
+                    st.session_state.uavs.append(p)
+                    st.session_state.history.append(("UAV", p))
+                    added = True
+                elif stage_now == "TASK" and len(st.session_state.tasks) < num_task and p not in st.session_state.tasks:
+                    st.session_state.tasks.append(p)
+                    st.session_state.history.append(("TASK", p))
+                    added = True
             st.session_state.prev_obj_len = extra
+            if added:
+                st.session_state.canvas_rev += 1
             st.rerun()
 
 with right:
-    st.markdown(
-        """
-        <div class="card card-tight">
-          <div style="display:flex; align-items:center; justify-content:space-between;">
-            <div style="font-weight:900;">🧭 Panel</div>
-            <div class="kpi"></div>
-          </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    st.markdown('<div class="card card-tight"><div style="font-weight:900;">🧭 Panel</div></div>', unsafe_allow_html=True)
     st.write("")
-
     tabs = st.tabs(["Overview", "Assignment", "Explanation", "Export"])
-
     with tabs[0]:
         st.markdown("#### Input")
         colA, colB = st.columns(2)
@@ -897,105 +699,59 @@ with right:
             st.markdown('<div class="card card-tight">', unsafe_allow_html=True)
             st.write(f"U ({u_cnt}/{num_uav})")
             st.write(st.session_state.uavs)
-            st.markdown("</div>", unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
         with colB:
             st.markdown('<div class="card card-tight">', unsafe_allow_html=True)
             st.write(f"T ({t_cnt}/{num_task})")
             st.write(st.session_state.tasks)
-            st.markdown("</div>", unsafe_allow_html=True)
-
+            st.markdown('</div>', unsafe_allow_html=True)
         if st.session_state.last_click is not None:
             r, c = st.session_state.last_click
             st.caption(f"{r},{c}")
-
         ready = (u_cnt == num_uav and t_cnt == num_task)
         run = st.button("🚀 Run", disabled=not ready, use_container_width=True)
-
         if run:
             starts = st.session_state.uavs
             tasks = st.session_state.tasks
             if algo_name.startswith("最近邻"):
                 task_plans = assign_tasks_nearest(starts, tasks)
             else:
-                task_plans = assign_tasks_comm_aware(
-                    starts, tasks, comm_map,
-                    alpha_dist=alpha_dist,
-                    lambda_comm=lambda_comm,
-                )
-
-            trajectories = plan_paths(
-                grid_size=grid_size,
-                starts=starts,
-                task_plans=task_plans,
-                comm_map=comm_map,
-                w_comm_risk=w_comm_risk,
-            )
-
+                task_plans = assign_tasks_comm_aware(starts, tasks, comm_map, alpha_dist=alpha_dist, lambda_comm=lambda_comm)
+            trajectories = plan_paths(grid_size=grid_size, starts=starts, task_plans=task_plans, comm_map=comm_map, w_comm_risk=w_comm_risk)
             metrics = evaluate_paths(comm_map, trajectories, weak_th=weak_th)
-            explain = explain_plain(
-                algo_name=algo_name,
-                comm_map=comm_map,
-                task_plans=task_plans,
-                w_comm_risk=w_comm_risk,
-                lambda_comm=lambda_comm,
-                weak_th=weak_th,
-            )
-
-            st.session_state.result = {
-                "task_plans": task_plans,
-                "trajectories": trajectories,
-                "metrics": metrics,
-                "explain": explain,
-            }
+            explain = explain_plain(algo_name, comm_map, task_plans, w_comm_risk, lambda_comm, weak_th)
+            st.session_state.result = {"task_plans": task_plans, "trajectories": trajectories, "metrics": metrics, "explain": explain}
             st.rerun()
-
         if st.session_state.result is not None:
             m = st.session_state.result["metrics"]
             c1, c2, c3 = st.columns(3)
             c1.metric("q̄", f"{m['avg_comm']:.3f}")
             c2.metric("weak", f"{m['weak_ratio']:.3f}")
             c3.metric("steps", f"{int(m['total_steps'])}")
-
     with tabs[1]:
         if st.session_state.result is None:
             st.markdown('<span class="badge soft">—</span>', unsafe_allow_html=True)
         else:
             df = build_assignment_df(st.session_state.result["task_plans"], tasks_global=st.session_state.tasks)
             st.dataframe(df, use_container_width=True, hide_index=True)
-
     with tabs[2]:
         if st.session_state.result is None:
             st.markdown('<span class="badge soft">—</span>', unsafe_allow_html=True)
         else:
             explain_text = st.session_state.result["explain"]
-
             def _open_explain():
                 st.session_state.open_explain = True
-
-            st.markdown(
-                """
-                <div class="card">
-                    <div style="font-weight:900; margin-bottom:6px;">🗣️ Decision Report</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+            st.markdown('<div class="card"><div style="font-weight:900; margin-bottom:6px;">🗣️ Decision Report</div></div>', unsafe_allow_html=True)
             st.write("")
             st.button("📄 Open full explanation", on_click=_open_explain, use_container_width=True)
-            st.write("")
-            st.button("📋 Copy", on_click=lambda: st.toast("已生成解释文本，可直接复制使用"), use_container_width=True)
-
             if st.session_state.open_explain:
                 @st.dialog("🗣️ Decision Report (Full)")
                 def _dlg():
-                    st.markdown('<div class="card" style="margin-bottom:10px;"></div>', unsafe_allow_html=True)
                     st.markdown(explain_text.replace("\n", "  \n"), unsafe_allow_html=False)
-                    st.write("")
                     if st.button("Close", use_container_width=True):
                         st.session_state.open_explain = False
                         st.rerun()
                 _dlg()
-
     with tabs[3]:
         if st.session_state.result is None:
             st.markdown('<span class="badge soft">—</span>', unsafe_allow_html=True)
@@ -1007,10 +763,4 @@ with right:
                 "task_plans": st.session_state.result["task_plans"],
                 "metrics": st.session_state.result["metrics"],
             }
-            st.download_button(
-                "⬇︎ JSON",
-                data=pd.Series(export).to_json(force_ascii=False, indent=2),
-                file_name="uav_agent_result.json",
-                mime="application/json",
-                use_container_width=True,
-            )
+            st.download_button("⬇︎ JSON", data=pd.Series(export).to_json(force_ascii=False, indent=2), file_name="uav_agent_result.json", mime="application/json", use_container_width=True)
