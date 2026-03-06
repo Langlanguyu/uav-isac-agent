@@ -642,7 +642,13 @@ st.session_state.uavs = st.session_state.uavs[:num_uav]
 st.session_state.tasks = st.session_state.tasks[:num_task]
 
 CANVAS_PX = 560
-base = comm_map_to_image_cached(comm_map.astype(np.float64).tobytes(), grid_size, grid_size, bs, CANVAS_PX)
+base = comm_map_to_image_cached(
+    comm_map.astype(np.float64).tobytes(),
+    grid_size,
+    grid_size,
+    bs,
+    CANVAS_PX,
+)
 
 overlay_bg = draw_overlay(
     base_img=base,
@@ -651,6 +657,21 @@ overlay_bg = draw_overlay(
     tasks=st.session_state.tasks,
     trajectories=(st.session_state.result["trajectories"] if st.session_state.result else None),
 )
+
+# ===== 强制把 background_image 处理成 canvas 更容易识别的 PIL RGB 图 =====
+if isinstance(overlay_bg, Image.Image):
+    bg = overlay_bg.convert("RGB")
+else:
+    arr = np.asarray(overlay_bg)
+    if arr.dtype != np.uint8:
+        arr = np.clip(arr, 0, 255).astype(np.uint8)
+    bg = Image.fromarray(arr).convert("RGB")
+
+# ===== 可选 debug：先看传给 canvas 的图是不是有颜色 =====
+st.image(bg, caption="DEBUG bg to canvas", use_container_width=True)
+
+# ===== 强制 canvas 尺寸和背景图尺寸一致 =====
+W, H = bg.size
 
 stage = current_auto_stage(num_uav, num_task)
 u_cnt = len(st.session_state.uavs)
@@ -722,10 +743,10 @@ with left:
         fill_color="rgba(0,0,0,0)",
         stroke_width=1,
         stroke_color="rgba(0,0,0,0)",
-        background_image=overlay_bg,
+        background_image=bg,   # 这里不要再用 overlay_bg，改成 bg
         update_streamlit=True,
-        height=CANVAS_PX,
-        width=CANVAS_PX,
+        height=H,              # 不要再写 CANVAS_PX
+        width=W,               # 不要再写 CANVAS_PX
         drawing_mode="point",
         point_display_radius=1,
         display_toolbar=False,
@@ -740,7 +761,7 @@ with left:
             for obj in new_objs:
                 x_px = float(obj.get("left", 0.0))
                 y_px = float(obj.get("top", 0.0))
-                p = pixel_to_grid(x_px, y_px, grid_size, CANVAS_PX)
+                p = pixel_to_grid(x_px, y_px, grid_size, W)
                 if p is None:
                     continue
 
