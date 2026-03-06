@@ -631,6 +631,7 @@ def ensure_state():
     st.session_state.setdefault("result", None)
     st.session_state.setdefault("history", [])
     st.session_state.setdefault("open_explain", False)
+    st.session_state.setdefault("canvas_rev", 0)
 
 
 def reset_all():
@@ -642,6 +643,7 @@ def reset_all():
     st.session_state.result = None
     st.session_state.history = []
     st.session_state.open_explain = False
+    st.session_state.canvas_rev += 1
 
 
 def current_auto_stage(num_uav: int, num_task: int) -> str:
@@ -764,6 +766,9 @@ if undo:
             if p in st.session_state.tasks:
                 st.session_state.tasks.remove(p)
         st.session_state.result = None
+        st.session_state.prev_obj_len = 0
+        st.session_state.last_canvas_sig = None
+        st.session_state.canvas_rev += 1
         st.rerun()
     else:
         st.rerun()
@@ -772,12 +777,18 @@ if clear_u:
     st.session_state.uavs = []
     st.session_state.history = [(t, p) for (t, p) in st.session_state.history if t != "UAV"]
     st.session_state.result = None
+    st.session_state.prev_obj_len = 0
+    st.session_state.last_canvas_sig = None
+    st.session_state.canvas_rev += 1
     st.rerun()
 
 if clear_t:
     st.session_state.tasks = []
     st.session_state.history = [(t, p) for (t, p) in st.session_state.history if t != "TASK"]
     st.session_state.result = None
+    st.session_state.prev_obj_len = 0
+    st.session_state.last_canvas_sig = None
+    st.session_state.canvas_rev += 1
     st.rerun()
 
 if clear_all:
@@ -893,7 +904,7 @@ with left:
         drawing_mode="point",
         point_display_radius=max(5, int(CANVAS_PX / grid_size * 0.22)),
         display_toolbar=False,
-        key="click_canvas_input",
+        key=f"click_canvas_input_{st.session_state.canvas_rev}",
     )
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -922,11 +933,17 @@ with left:
                         if len(st.session_state.uavs) < num_uav and p not in st.session_state.uavs:
                             st.session_state.uavs.append(p)
                             st.session_state.history.append(("UAV", p))
+                            st.session_state.prev_obj_len = 0
+                            st.session_state.last_canvas_sig = None
+                            st.session_state.canvas_rev += 1
                             st.rerun()
                     elif stage_now == "TASK":
                         if len(st.session_state.tasks) < num_task and p not in st.session_state.tasks:
                             st.session_state.tasks.append(p)
                             st.session_state.history.append(("TASK", p))
+                            st.session_state.prev_obj_len = 0
+                            st.session_state.last_canvas_sig = None
+                            st.session_state.canvas_rev += 1
                             st.rerun()
 
 with right:
@@ -1003,6 +1020,9 @@ with right:
                 "metrics": metrics,
                 "explain": explain,
             }
+            st.session_state.prev_obj_len = 0
+            st.session_state.last_canvas_sig = None
+            st.session_state.canvas_rev += 1
             st.rerun()
 
         if st.session_state.result is not None:
