@@ -164,6 +164,166 @@ def comm_map_to_image_cached(comm_bytes: bytes, H: int, W: int, bs: GridPos, out
     return img
 
 
+def _rgb_to_hex(rgb: tuple[int, int, int]) -> str:
+    return "#%02x%02x%02x" % rgb
+
+
+def _comm_to_rgb(v: float) -> tuple[int, int, int]:
+    t = float(np.clip(v, 0.0, 1.0))
+    r = int(255 * np.clip(1.6 * (t - 0.55), 0, 1))
+    g = int(255 * np.clip(1.8 * (t - 0.20), 0, 1))
+    b = int(255 * np.clip(1.2 * (0.95 - t), 0, 1))
+    return (r, g, b)
+
+
+def build_canvas_initial_drawing(
+    comm_map: np.ndarray,
+    grid_size: int,
+    canvas_px: int,
+    bs: GridPos,
+    uavs: List[GridPos],
+    tasks: List[GridPos],
+    trajectories: Optional[List[List[GridPos]]] = None,
+) -> dict:
+    cell = canvas_px / grid_size
+    objects = []
+
+    # heatmap cells
+    for r in range(grid_size):
+        for c in range(grid_size):
+            fill = _rgb_to_hex(_comm_to_rgb(float(comm_map[r, c])))
+            objects.append({
+                "type": "rect",
+                "version": "4.4.0",
+                "originX": "left",
+                "originY": "top",
+                "left": c * cell,
+                "top": r * cell,
+                "width": cell + 0.25,
+                "height": cell + 0.25,
+                "fill": fill,
+                "stroke": None,
+                "strokeWidth": 0,
+                "rx": 0,
+                "ry": 0,
+                "selectable": False,
+                "evented": False,
+                "hasControls": False,
+                "hasBorders": False,
+            })
+
+    # subtle grid lines
+    line_color = "rgba(255,255,255,0.08)"
+    for i in range(grid_size + 1):
+        x = i * cell
+        y = i * cell
+        objects.append({
+            "type": "line",
+            "version": "4.4.0",
+            "originX": "left",
+            "originY": "top",
+            "x1": x, "y1": 0, "x2": x, "y2": canvas_px,
+            "left": 0, "top": 0,
+            "stroke": line_color,
+            "strokeWidth": 1,
+            "selectable": False, "evented": False,
+        })
+        objects.append({
+            "type": "line",
+            "version": "4.4.0",
+            "originX": "left",
+            "originY": "top",
+            "x1": 0, "y1": y, "x2": canvas_px, "y2": y,
+            "left": 0, "top": 0,
+            "stroke": line_color,
+            "strokeWidth": 1,
+            "selectable": False, "evented": False,
+        })
+
+    def center(p: GridPos):
+        return ((p[1] + 0.5) * cell, (p[0] + 0.5) * cell)
+
+    # trajectories
+    colors = ["#ffffff", "#ff6464", "#64ff64", "#64b4ff", "#fff06e", "#ff96ff"]
+    if trajectories:
+        for i, traj in enumerate(trajectories):
+            if len(traj) < 2:
+                continue
+            col = colors[i % len(colors)]
+            for a, b in zip(traj[:-1], traj[1:]):
+                x1, y1 = center(a)
+                x2, y2 = center(b)
+                objects.append({
+                    "type": "line",
+                    "version": "4.4.0",
+                    "originX": "left",
+                    "originY": "top",
+                    "x1": x1, "y1": y1, "x2": x2, "y2": y2,
+                    "left": 0, "top": 0,
+                    "stroke": col,
+                    "strokeWidth": max(2, int(cell * 0.15)),
+                    "strokeLineCap": "round",
+                    "selectable": False, "evented": False,
+                })
+
+    # tasks
+    for p in tasks:
+        cx, cy = center(p)
+        R = max(6, int(cell * 0.30))
+        objects.append({
+            "type": "circle",
+            "version": "4.4.0",
+            "originX": "center",
+            "originY": "center",
+            "left": cx,
+            "top": cy,
+            "radius": R,
+            "fill": "rgba(0,0,0,0)",
+            "stroke": "#ffffff",
+            "strokeWidth": 3,
+            "selectable": False, "evented": False,
+        })
+
+    # uavs
+    for i, p in enumerate(uavs):
+        cx, cy = center(p)
+        R = max(5, int(cell * 0.25))
+        col = colors[i % len(colors)]
+        objects.append({
+            "type": "rect",
+            "version": "4.4.0",
+            "originX": "center",
+            "originY": "center",
+            "left": cx,
+            "top": cy,
+            "width": 2 * R,
+            "height": 2 * R,
+            "fill": col,
+            "stroke": "#000000",
+            "strokeWidth": 2,
+            "selectable": False, "evented": False,
+        })
+
+    # base station
+    cx, cy = center(bs)
+    R = max(6, int(cell * 0.25))
+    objects.append({
+        "type": "circle",
+        "version": "4.4.0",
+        "originX": "center",
+        "originY": "center",
+        "left": cx,
+        "top": cy,
+        "radius": R,
+        "fill": "#ffa500",
+        "stroke": "#000000",
+        "strokeWidth": 2,
+        "selectable": False, "evented": False,
+    })
+
+    return {"version": "4.4.0", "objects": objects}
+
+
 def pixel_to_grid(x_px: float, y_px: float, grid_size: int, canvas_px: int) -> GridPos | None:
     if x_px is None or y_px is None:
         return None
@@ -467,6 +627,7 @@ def ensure_state():
     st.session_state.setdefault("tasks", [])
     st.session_state.setdefault("last_click", None)
     st.session_state.setdefault("prev_obj_len", 0)
+    st.session_state.setdefault("last_canvas_sig", None)
     st.session_state.setdefault("result", None)
     st.session_state.setdefault("history", [])
     st.session_state.setdefault("open_explain", False)
@@ -477,6 +638,7 @@ def reset_all():
     st.session_state.tasks = []
     st.session_state.last_click = None
     st.session_state.prev_obj_len = 0
+    st.session_state.last_canvas_sig = None
     st.session_state.result = None
     st.session_state.history = []
     st.session_state.open_explain = False
@@ -642,36 +804,16 @@ st.session_state.uavs = st.session_state.uavs[:num_uav]
 st.session_state.tasks = st.session_state.tasks[:num_task]
 
 CANVAS_PX = 560
-base = comm_map_to_image_cached(
-    comm_map.astype(np.float64).tobytes(),
-    grid_size,
-    grid_size,
-    bs,
-    CANVAS_PX,
-)
-
-overlay_bg = draw_overlay(
-    base_img=base,
+initial_drawing = build_canvas_initial_drawing(
+    comm_map=comm_map,
     grid_size=grid_size,
+    canvas_px=CANVAS_PX,
+    bs=bs,
     uavs=st.session_state.uavs,
     tasks=st.session_state.tasks,
     trajectories=(st.session_state.result["trajectories"] if st.session_state.result else None),
 )
-
-# ===== 强制把 background_image 处理成 canvas 更容易识别的 PIL RGB 图 =====
-if isinstance(overlay_bg, Image.Image):
-    bg = overlay_bg.convert("RGB")
-else:
-    arr = np.asarray(overlay_bg)
-    if arr.dtype != np.uint8:
-        arr = np.clip(arr, 0, 255).astype(np.uint8)
-    bg = Image.fromarray(arr).convert("RGB")
-
-# ===== 可选 debug：先看传给 canvas 的图是不是有颜色 =====
-st.image(bg, caption="DEBUG bg to canvas")
-
-# ===== 强制 canvas 尺寸和背景图尺寸一致 =====
-W, H = bg.size
+bg_obj_count = len(initial_drawing["objects"])
 
 stage = current_auto_stage(num_uav, num_task)
 u_cnt = len(st.session_state.uavs)
@@ -743,12 +885,13 @@ with left:
         fill_color="rgba(0,0,0,0)",
         stroke_width=1,
         stroke_color="rgba(0,0,0,0)",
-        background_image=bg,   # 这里不要再用 overlay_bg，改成 bg
+        background_color="rgba(0,0,0,0)",
+        initial_drawing=initial_drawing,
         update_streamlit=True,
-        height=H,              # 不要再写 CANVAS_PX
-        width=W,               # 不要再写 CANVAS_PX
+        height=CANVAS_PX,
+        width=CANVAS_PX,
         drawing_mode="point",
-        point_display_radius=1,
+        point_display_radius=max(5, int(CANVAS_PX / grid_size * 0.22)),
         display_toolbar=False,
         key="click_canvas_input",
     )
@@ -756,31 +899,35 @@ with left:
 
     if canvas.json_data is not None:
         objs = canvas.json_data.get("objects", [])
-        if len(objs) > st.session_state.prev_obj_len:
-            new_objs = objs[st.session_state.prev_obj_len:]
-            for obj in new_objs:
-                x_px = float(obj.get("left", 0.0))
-                y_px = float(obj.get("top", 0.0))
-                p = pixel_to_grid(x_px, y_px, grid_size, W)
-                if p is None:
-                    continue
+        if len(objs) > bg_obj_count:
+            user_objs = objs[bg_obj_count:]
+            last_obj = user_objs[-1]
+            sig = (
+                last_obj.get("type", "?"),
+                round(float(last_obj.get("left", 0.0)), 3),
+                round(float(last_obj.get("top", 0.0)), 3),
+                len(user_objs),
+            )
+            if sig != st.session_state.last_canvas_sig:
+                st.session_state.last_canvas_sig = sig
+                x_px = float(last_obj.get("left", 0.0))
+                y_px = float(last_obj.get("top", 0.0))
+                p = pixel_to_grid(x_px, y_px, grid_size, CANVAS_PX)
+                if p is not None:
+                    st.session_state.last_click = p
+                    st.session_state.result = None
 
-                st.session_state.last_click = p
-                st.session_state.result = None
-
-                stage_now = current_auto_stage(num_uav, num_task)
-                if stage_now == "UAV":
-                    if len(st.session_state.uavs) < num_uav and p not in st.session_state.uavs:
-                        st.session_state.uavs.append(p)
-                        st.session_state.history.append(("UAV", p))
-                elif stage_now == "TASK":
-                    if len(st.session_state.tasks) < num_task and p not in st.session_state.tasks:
-                        st.session_state.tasks.append(p)
-                        st.session_state.history.append(("TASK", p))
-                else:
-                    pass
-
-            st.session_state.prev_obj_len = len(objs)
+                    stage_now = current_auto_stage(num_uav, num_task)
+                    if stage_now == "UAV":
+                        if len(st.session_state.uavs) < num_uav and p not in st.session_state.uavs:
+                            st.session_state.uavs.append(p)
+                            st.session_state.history.append(("UAV", p))
+                            st.rerun()
+                    elif stage_now == "TASK":
+                        if len(st.session_state.tasks) < num_task and p not in st.session_state.tasks:
+                            st.session_state.tasks.append(p)
+                            st.session_state.history.append(("TASK", p))
+                            st.rerun()
 
 with right:
     st.markdown(
