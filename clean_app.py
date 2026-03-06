@@ -1,13 +1,9 @@
-#cd /Users/fanbllang/Documents/BUPTstudy/2026寒/uav_isac_demo
-#source .venv/bin/activate
-#python3 -m streamlit run clean_app.py
-
 import streamlit as st
 import numpy as np
 import pandas as pd
 from PIL import Image, ImageDraw
 
-from typing import List, Tuple, Dict, Optional
+from typing import List, Dict, Optional
 import heapq
 
 from streamlit_drawable_canvas import st_canvas
@@ -28,8 +24,6 @@ def inject_css():
         .block-container { padding-top: 1.0rem; padding-bottom: 2.2rem; }
 
         h1, h2, h3 { letter-spacing: -0.02em; }
-
-        .muted { color: rgba(20,20,20,0.60); font-size: 0.92rem; }
 
         .card {
             background: rgba(255,255,255,0.78);
@@ -90,11 +84,6 @@ def inject_css():
             align-items:center;
         }
         .kpi .badge { background: rgba(255,255,255,0.86); }
-
-        .small {
-            font-size: 0.9rem;
-            color: rgba(20,20,20,0.65);
-        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -162,223 +151,6 @@ def comm_map_to_image_cached(comm_bytes: bytes, H: int, W: int, bs: GridPos, out
     draw.ellipse((cx - R, cy - R, cx + R, cy + R), fill=(255, 165, 0), outline=(0, 0, 0), width=2)
 
     return img
-
-
-def _rgb_to_hex(rgb: tuple[int, int, int]) -> str:
-    return "#%02x%02x%02x" % rgb
-
-
-def _comm_to_rgb(v: float) -> tuple[int, int, int]:
-    t = float(np.clip(v, 0.0, 1.0))
-    r = int(255 * np.clip(1.6 * (t - 0.55), 0, 1))
-    g = int(255 * np.clip(1.8 * (t - 0.20), 0, 1))
-    b = int(255 * np.clip(1.2 * (0.95 - t), 0, 1))
-    return (r, g, b)
-
-
-
-def build_canvas_initial_drawing(
-    comm_map: np.ndarray,
-    grid_size: int,
-    canvas_px: int,
-    bs: GridPos,
-    uavs: List[GridPos],
-    tasks: List[GridPos],
-    trajectories: Optional[List[List[GridPos]]] = None,
-) -> dict:
-    """
-    Use only rect/circle objects for visualization.
-    This is much more reliable on Streamlit Cloud than fabric line objects.
-    """
-    cell = canvas_px / grid_size
-    objects: list[dict] = []
-
-    def center(p: GridPos) -> tuple[float, float]:
-        return ((p[1] + 0.5) * cell, (p[0] + 0.5) * cell)
-
-    # heatmap cells
-    for r in range(grid_size):
-        for c in range(grid_size):
-            fill = _rgb_to_hex(_comm_to_rgb(float(comm_map[r, c])))
-            objects.append({
-                "type": "rect",
-                "version": "4.4.0",
-                "originX": "left",
-                "originY": "top",
-                "left": c * cell,
-                "top": r * cell,
-                "width": cell + 0.25,
-                "height": cell + 0.25,
-                "fill": fill,
-                "stroke": None,
-                "strokeWidth": 0,
-                "rx": 0,
-                "ry": 0,
-                "selectable": False,
-                "evented": False,
-                "hasControls": False,
-                "hasBorders": False,
-            })
-
-    # subtle grid lines, also via very thin rects
-    grid_col = "rgba(255,255,255,0.08)"
-    for i in range(grid_size + 1):
-        x = i * cell
-        y = i * cell
-        objects.append({
-            "type": "rect",
-            "version": "4.4.0",
-            "originX": "center",
-            "originY": "top",
-            "left": x,
-            "top": 0,
-            "width": 1,
-            "height": canvas_px,
-            "fill": grid_col,
-            "stroke": None,
-            "strokeWidth": 0,
-            "selectable": False,
-            "evented": False,
-        })
-        objects.append({
-            "type": "rect",
-            "version": "4.4.0",
-            "originX": "left",
-            "originY": "center",
-            "left": 0,
-            "top": y,
-            "width": canvas_px,
-            "height": 1,
-            "fill": grid_col,
-            "stroke": None,
-            "strokeWidth": 0,
-            "selectable": False,
-            "evented": False,
-        })
-
-    # trajectories: draw connectors with rects + nodes with circles.
-    # This avoids fabric line rendering issues on Cloud while keeping routes clear.
-    colors = ["#ffffff", "#ff6464", "#64ff64", "#64b4ff", "#fff06e", "#ff96ff"]
-    if trajectories:
-        thickness = max(4, int(cell * 0.28))
-        node_r = max(3, int(cell * 0.18))
-
-        for i, traj in enumerate(trajectories):
-            if len(traj) < 2:
-                continue
-            col = colors[i % len(colors)]
-
-            # connector bars
-            for a, b in zip(traj[:-1], traj[1:]):
-                x1, y1 = center(a)
-                x2, y2 = center(b)
-
-                if a[0] == b[0]:  # horizontal
-                    cx = (x1 + x2) / 2
-                    cy = y1
-                    width = abs(x2 - x1) + thickness
-                    height = thickness
-                else:  # vertical
-                    cx = x1
-                    cy = (y1 + y2) / 2
-                    width = thickness
-                    height = abs(y2 - y1) + thickness
-
-                objects.append({
-                    "type": "rect",
-                    "version": "4.4.0",
-                    "originX": "center",
-                    "originY": "center",
-                    "left": cx,
-                    "top": cy,
-                    "width": width,
-                    "height": height,
-                    "fill": col,
-                    "stroke": None,
-                    "strokeWidth": 0,
-                    "rx": thickness / 2,
-                    "ry": thickness / 2,
-                    "selectable": False,
-                    "evented": False,
-                })
-
-            # node dots on top of connectors
-            for p in traj:
-                cx, cy = center(p)
-                objects.append({
-                    "type": "circle",
-                    "version": "4.4.0",
-                    "originX": "center",
-                    "originY": "center",
-                    "left": cx,
-                    "top": cy,
-                    "radius": node_r,
-                    "fill": col,
-                    "stroke": None,
-                    "strokeWidth": 0,
-                    "selectable": False,
-                    "evented": False,
-                })
-
-    # tasks
-    for p in tasks:
-        cx, cy = center(p)
-        R = max(6, int(cell * 0.30))
-        objects.append({
-            "type": "circle",
-            "version": "4.4.0",
-            "originX": "center",
-            "originY": "center",
-            "left": cx,
-            "top": cy,
-            "radius": R,
-            "fill": "rgba(0,0,0,0)",
-            "stroke": "#ffffff",
-            "strokeWidth": 3,
-            "selectable": False,
-            "evented": False,
-        })
-
-    # uavs
-    for i, p in enumerate(uavs):
-        cx, cy = center(p)
-        R = max(5, int(cell * 0.25))
-        col = colors[i % len(colors)]
-        objects.append({
-            "type": "rect",
-            "version": "4.4.0",
-            "originX": "center",
-            "originY": "center",
-            "left": cx,
-            "top": cy,
-            "width": 2 * R,
-            "height": 2 * R,
-            "fill": col,
-            "stroke": "#000000",
-            "strokeWidth": 2,
-            "selectable": False,
-            "evented": False,
-        })
-
-    # base station
-    cx, cy = center(bs)
-    R = max(6, int(cell * 0.25))
-    objects.append({
-        "type": "circle",
-        "version": "4.4.0",
-        "originX": "center",
-        "originY": "center",
-        "left": cx,
-        "top": cy,
-        "radius": R,
-        "fill": "#ffa500",
-        "stroke": "#000000",
-        "strokeWidth": 2,
-        "selectable": False,
-        "evented": False,
-    })
-
-    return {"version": "4.4.0", "objects": objects}
 
 
 def pixel_to_grid(x_px: float, y_px: float, grid_size: int, canvas_px: int) -> GridPos | None:
@@ -663,7 +435,7 @@ def draw_overlay(
                 continue
             pts = [center(p) for p in traj]
             col = colors[i % len(colors)]
-            draw.line(pts, fill=col, width=max(2, int(cell * 0.15)))
+            draw.line(pts, fill=col, width=max(2, int(cell * 0.18)))
 
     for i, p in enumerate(uavs):
         cx, cy = center(p)
@@ -679,16 +451,146 @@ def draw_overlay(
     return img
 
 
+def _rgb_to_hex(rgb: tuple[int, int, int]) -> str:
+    return "#%02x%02x%02x" % rgb
+
+
+def _comm_to_rgb(v: float) -> tuple[int, int, int]:
+    t = float(np.clip(v, 0.0, 1.0))
+    r = int(255 * np.clip(1.6 * (t - 0.55), 0, 1))
+    g = int(255 * np.clip(1.8 * (t - 0.20), 0, 1))
+    b = int(255 * np.clip(1.2 * (0.95 - t), 0, 1))
+    return (r, g, b)
+
+
+@st.cache_data(show_spinner=False)
+def build_canvas_initial_drawing_cached(
+    comm_bytes: bytes,
+    grid_size: int,
+    canvas_px: int,
+    bs: GridPos,
+    uavs: tuple[GridPos, ...],
+    tasks: tuple[GridPos, ...],
+) -> dict:
+    comm_map = np.frombuffer(comm_bytes, dtype=np.float64).reshape((grid_size, grid_size))
+    cell = canvas_px / grid_size
+    objects: list[dict] = []
+
+    # heatmap only + current points; no trajectories here, to keep canvas fast.
+    for r in range(grid_size):
+        for c in range(grid_size):
+            fill = _rgb_to_hex(_comm_to_rgb(float(comm_map[r, c])))
+            objects.append({
+                "type": "rect",
+                "version": "4.4.0",
+                "originX": "left",
+                "originY": "top",
+                "left": c * cell,
+                "top": r * cell,
+                "width": cell + 0.1,
+                "height": cell + 0.1,
+                "fill": fill,
+                "stroke": None,
+                "strokeWidth": 0,
+                "selectable": False,
+                "evented": False,
+                "hasControls": False,
+                "hasBorders": False,
+            })
+
+    # base station marker
+    bs_x = (bs[1] + 0.5) * cell
+    bs_y = (bs[0] + 0.5) * cell
+    objects.append({
+        "type": "circle",
+        "version": "4.4.0",
+        "originX": "center",
+        "originY": "center",
+        "left": bs_x,
+        "top": bs_y,
+        "radius": max(5, cell * 0.22),
+        "fill": "#ffa500",
+        "stroke": "#000000",
+        "strokeWidth": 2,
+        "selectable": False,
+        "evented": False,
+    })
+
+    # light grid lines
+    for i in range(grid_size + 1):
+        x = i * cell
+        y = i * cell
+        objects.append({
+            "type": "line",
+            "version": "4.4.0",
+            "x1": x, "y1": 0, "x2": x, "y2": canvas_px,
+            "stroke": "rgba(255,255,255,0.08)",
+            "strokeWidth": 1,
+            "selectable": False,
+            "evented": False,
+        })
+        objects.append({
+            "type": "line",
+            "version": "4.4.0",
+            "x1": 0, "y1": y, "x2": canvas_px, "y2": y,
+            "stroke": "rgba(255,255,255,0.08)",
+            "strokeWidth": 1,
+            "selectable": False,
+            "evented": False,
+        })
+
+    uav_colors = ["#ffffff", "#ff6464", "#64ff64", "#64b4ff", "#fff06e", "#ff96ff"]
+
+    for i, p in enumerate(uavs):
+        cx = (p[1] + 0.5) * cell
+        cy = (p[0] + 0.5) * cell
+        objects.append({
+            "type": "rect",
+            "version": "4.4.0",
+            "originX": "center",
+            "originY": "center",
+            "left": cx,
+            "top": cy,
+            "width": max(8, cell * 0.5),
+            "height": max(8, cell * 0.5),
+            "fill": uav_colors[i % len(uav_colors)],
+            "stroke": "#000000",
+            "strokeWidth": 2,
+            "rx": 2,
+            "ry": 2,
+            "selectable": False,
+            "evented": False,
+        })
+
+    for p in tasks:
+        cx = (p[1] + 0.5) * cell
+        cy = (p[0] + 0.5) * cell
+        objects.append({
+            "type": "circle",
+            "version": "4.4.0",
+            "originX": "center",
+            "originY": "center",
+            "left": cx,
+            "top": cy,
+            "radius": max(6, cell * 0.28),
+            "fill": "rgba(0,0,0,0)",
+            "stroke": "#ffffff",
+            "strokeWidth": 3,
+            "selectable": False,
+            "evented": False,
+        })
+
+    return {"version": "4.4.0", "objects": objects}
+
+
 def ensure_state():
     st.session_state.setdefault("uavs", [])
     st.session_state.setdefault("tasks", [])
     st.session_state.setdefault("last_click", None)
     st.session_state.setdefault("prev_obj_len", 0)
-    st.session_state.setdefault("last_canvas_sig", None)
     st.session_state.setdefault("result", None)
     st.session_state.setdefault("history", [])
     st.session_state.setdefault("open_explain", False)
-    st.session_state.setdefault("canvas_rev", 0)
 
 
 def reset_all():
@@ -696,11 +598,9 @@ def reset_all():
     st.session_state.tasks = []
     st.session_state.last_click = None
     st.session_state.prev_obj_len = 0
-    st.session_state.last_canvas_sig = None
     st.session_state.result = None
     st.session_state.history = []
     st.session_state.open_explain = False
-    st.session_state.canvas_rev += 1
 
 
 def current_auto_stage(num_uav: int, num_task: int) -> str:
@@ -720,13 +620,11 @@ def stage_badge(stage: str) -> str:
 
 
 def build_task_id_map(tasks: List[GridPos]) -> Dict[GridPos, str]:
-    # 全局任务ID：按输入顺序编号
     return {p: f"T{i}" for i, p in enumerate(tasks)}
 
 
 def build_assignment_df(task_plans: List[List[GridPos]], tasks_global: List[GridPos]) -> pd.DataFrame:
     tid = build_task_id_map(tasks_global)
-
     rows = []
     for i, plan in enumerate(task_plans):
         if plan:
@@ -743,16 +641,7 @@ def build_assignment_df(task_plans: List[List[GridPos]], tasks_global: List[Grid
                 }
             )
         else:
-            rows.append(
-                {
-                    "UAV": f"U{i+1}",
-                    "Tasks": 0,
-                    "Sequence (Global)": "-",
-                    "First": "-",
-                    "Last": "-",
-                }
-            )
-
+            rows.append({"UAV": f"U{i+1}", "Tasks": 0, "Sequence (Global)": "-", "First": "-", "Last": "-"})
     return pd.DataFrame(rows)
 
 
@@ -776,7 +665,6 @@ st.markdown(
 )
 st.write("")
 
-
 with st.sidebar:
     st.markdown("### ⚙️")
     with st.expander("Grid", expanded=True):
@@ -793,7 +681,6 @@ with st.sidebar:
         sh_c = st.slider("Shadow col", 0, grid_size - 1, int(grid_size * 0.75))
         sh_rad = st.slider("Shadow r", 1, grid_size // 2, max(2, grid_size // 5))
         sh_strength = st.slider("Shadow s", 0.0, 0.95, 0.75, 0.05)
-
         uploaded = None
         if mode == "A":
             uploaded = st.file_uploader("CSV", type=["csv"])
@@ -812,31 +699,22 @@ with st.sidebar:
     clear_t = c3.button("T", use_container_width=True)
     clear_all = st.button("✕", use_container_width=True)
 
-
 if undo:
     if st.session_state.history:
         typ, p = st.session_state.history.pop()
-        if typ == "UAV":
-            if p in st.session_state.uavs:
-                st.session_state.uavs.remove(p)
-        else:
-            if p in st.session_state.tasks:
-                st.session_state.tasks.remove(p)
+        if typ == "UAV" and p in st.session_state.uavs:
+            st.session_state.uavs.remove(p)
+        if typ == "TASK" and p in st.session_state.tasks:
+            st.session_state.tasks.remove(p)
         st.session_state.result = None
         st.session_state.prev_obj_len = 0
-        st.session_state.last_canvas_sig = None
-        st.session_state.canvas_rev += 1
-        st.rerun()
-    else:
-        st.rerun()
+    st.rerun()
 
 if clear_u:
     st.session_state.uavs = []
     st.session_state.history = [(t, p) for (t, p) in st.session_state.history if t != "UAV"]
     st.session_state.result = None
     st.session_state.prev_obj_len = 0
-    st.session_state.last_canvas_sig = None
-    st.session_state.canvas_rev += 1
     st.rerun()
 
 if clear_t:
@@ -844,14 +722,11 @@ if clear_t:
     st.session_state.history = [(t, p) for (t, p) in st.session_state.history if t != "TASK"]
     st.session_state.result = None
     st.session_state.prev_obj_len = 0
-    st.session_state.last_canvas_sig = None
-    st.session_state.canvas_rev += 1
     st.rerun()
 
 if clear_all:
     reset_all()
     st.rerun()
-
 
 bs = (bs_r, bs_c)
 comm_map = generate_comm_map(
@@ -861,7 +736,6 @@ comm_map = generate_comm_map(
     shadow_radius=sh_rad,
     shadow_strength=sh_strength,
 )
-
 if mode == "A" and uploaded is not None:
     try:
         comm_map = load_comm_map_from_csv(uploaded, grid_size, grid_size)
@@ -872,16 +746,23 @@ st.session_state.uavs = st.session_state.uavs[:num_uav]
 st.session_state.tasks = st.session_state.tasks[:num_task]
 
 CANVAS_PX = 560
-initial_drawing = build_canvas_initial_drawing(
-    comm_map=comm_map,
+comm_bytes = comm_map.astype(np.float64).tobytes()
+base = comm_map_to_image_cached(comm_bytes, grid_size, grid_size, bs, CANVAS_PX)
+result_img = draw_overlay(
+    base_img=base,
     grid_size=grid_size,
-    canvas_px=CANVAS_PX,
-    bs=bs,
     uavs=st.session_state.uavs,
     tasks=st.session_state.tasks,
     trajectories=(st.session_state.result["trajectories"] if st.session_state.result else None),
 )
-bg_obj_count = len(initial_drawing["objects"])
+initial_drawing = build_canvas_initial_drawing_cached(
+    comm_bytes,
+    grid_size,
+    CANVAS_PX,
+    bs,
+    tuple(st.session_state.uavs),
+    tuple(st.session_state.tasks),
+)
 
 stage = current_auto_stage(num_uav, num_task)
 u_cnt = len(st.session_state.uavs)
@@ -953,55 +834,45 @@ with left:
         fill_color="rgba(0,0,0,0)",
         stroke_width=1,
         stroke_color="rgba(0,0,0,0)",
-        background_color="rgba(0,0,0,0)",
-        initial_drawing=initial_drawing,
         update_streamlit=True,
         height=CANVAS_PX,
         width=CANVAS_PX,
         drawing_mode="point",
-        point_display_radius=max(5, int(CANVAS_PX / grid_size * 0.22)),
+        point_display_radius=1,
         display_toolbar=False,
-        key=f"click_canvas_input_{st.session_state.canvas_rev}",
+        initial_drawing=initial_drawing,
+        key="click_canvas_input",
     )
     st.markdown("</div>", unsafe_allow_html=True)
 
+    st.caption("上方画布用于选点；下方结果图用于稳定显示 UAV / TASK / 路径。")
+    st.image(result_img, caption="Result Visualization", width=CANVAS_PX)
+
     if canvas.json_data is not None:
         objs = canvas.json_data.get("objects", [])
-        if len(objs) > bg_obj_count:
-            user_objs = objs[bg_obj_count:]
-            last_obj = user_objs[-1]
-            sig = (
-                last_obj.get("type", "?"),
-                round(float(last_obj.get("left", 0.0)), 3),
-                round(float(last_obj.get("top", 0.0)), 3),
-                len(user_objs),
-            )
-            if sig != st.session_state.last_canvas_sig:
-                st.session_state.last_canvas_sig = sig
-                x_px = float(last_obj.get("left", 0.0))
-                y_px = float(last_obj.get("top", 0.0))
+        base_len = len(initial_drawing["objects"])
+        extra = max(0, len(objs) - base_len)
+        if extra > st.session_state.prev_obj_len:
+            new_objs = objs[base_len + st.session_state.prev_obj_len: base_len + extra]
+            for obj in new_objs:
+                x_px = float(obj.get("left", 0.0))
+                y_px = float(obj.get("top", 0.0))
                 p = pixel_to_grid(x_px, y_px, grid_size, CANVAS_PX)
-                if p is not None:
-                    st.session_state.last_click = p
-                    st.session_state.result = None
-
-                    stage_now = current_auto_stage(num_uav, num_task)
-                    if stage_now == "UAV":
-                        if len(st.session_state.uavs) < num_uav and p not in st.session_state.uavs:
-                            st.session_state.uavs.append(p)
-                            st.session_state.history.append(("UAV", p))
-                            st.session_state.prev_obj_len = 0
-                            st.session_state.last_canvas_sig = None
-                            st.session_state.canvas_rev += 1
-                            st.rerun()
-                    elif stage_now == "TASK":
-                        if len(st.session_state.tasks) < num_task and p not in st.session_state.tasks:
-                            st.session_state.tasks.append(p)
-                            st.session_state.history.append(("TASK", p))
-                            st.session_state.prev_obj_len = 0
-                            st.session_state.last_canvas_sig = None
-                            st.session_state.canvas_rev += 1
-                            st.rerun()
+                if p is None:
+                    continue
+                st.session_state.last_click = p
+                st.session_state.result = None
+                stage_now = current_auto_stage(num_uav, num_task)
+                if stage_now == "UAV":
+                    if len(st.session_state.uavs) < num_uav and p not in st.session_state.uavs:
+                        st.session_state.uavs.append(p)
+                        st.session_state.history.append(("UAV", p))
+                elif stage_now == "TASK":
+                    if len(st.session_state.tasks) < num_task and p not in st.session_state.tasks:
+                        st.session_state.tasks.append(p)
+                        st.session_state.history.append(("TASK", p))
+            st.session_state.prev_obj_len = extra
+            st.rerun()
 
 with right:
     st.markdown(
@@ -1043,7 +914,6 @@ with right:
         if run:
             starts = st.session_state.uavs
             tasks = st.session_state.tasks
-
             if algo_name.startswith("最近邻"):
                 task_plans = assign_tasks_nearest(starts, tasks)
             else:
@@ -1077,9 +947,6 @@ with right:
                 "metrics": metrics,
                 "explain": explain,
             }
-            st.session_state.prev_obj_len = 0
-            st.session_state.last_canvas_sig = None
-            st.session_state.canvas_rev += 1
             st.rerun()
 
         if st.session_state.result is not None:
@@ -1093,10 +960,7 @@ with right:
         if st.session_state.result is None:
             st.markdown('<span class="badge soft">—</span>', unsafe_allow_html=True)
         else:
-            df = build_assignment_df(
-                st.session_state.result["task_plans"],
-                tasks_global=st.session_state.tasks,
-            )
+            df = build_assignment_df(st.session_state.result["task_plans"], tasks_global=st.session_state.tasks)
             st.dataframe(df, use_container_width=True, hide_index=True)
 
     with tabs[2]:
@@ -1119,28 +983,17 @@ with right:
             st.write("")
             st.button("📄 Open full explanation", on_click=_open_explain, use_container_width=True)
             st.write("")
-            st.button(
-                "📋 Copy",
-                on_click=lambda: st.toast("已生成解释文本，可直接复制使用"),
-                use_container_width=True,
-            )
+            st.button("📋 Copy", on_click=lambda: st.toast("已生成解释文本，可直接复制使用"), use_container_width=True)
 
             if st.session_state.open_explain:
                 @st.dialog("🗣️ Decision Report (Full)")
                 def _dlg():
-                    st.markdown(
-                        """
-                        <div class="card" style="margin-bottom:10px;">
-                        </div>
-                        """,
-                        unsafe_allow_html=True,
-                    )
+                    st.markdown('<div class="card" style="margin-bottom:10px;"></div>', unsafe_allow_html=True)
                     st.markdown(explain_text.replace("\n", "  \n"), unsafe_allow_html=False)
                     st.write("")
                     if st.button("Close", use_container_width=True):
                         st.session_state.open_explain = False
                         st.rerun()
-
                 _dlg()
 
     with tabs[3]:
